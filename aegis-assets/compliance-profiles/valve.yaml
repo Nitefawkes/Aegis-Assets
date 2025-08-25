@@ -1,0 +1,34 @@
+# Valve Corporation - Permissive Publisher
+publisher: "Valve Corporation"
+game_id: null  # Applies to all Valve games
+enforcement_level: "Permissive"
+official_support: true
+bounty_eligible: true
+enterprise_warning: null
+mod_policy_url: "https://developer.valvesoftware.com/wiki/Mod_Content_Usage"
+
+supported_formats:
+  vpk: "Supported"       # Valve Pak files
+  vmt: "Supported"       # Valve Material Type
+  vtf: "Supported"       # Valve Texture Format
+  mdl: "Supported"       # Model files
+  vvd: "Supported"       # Vertex data
+  vtx: "Supported"       # Hardware vertex data
+  bsp: "Supported"       # Binary Space Partition (maps)
+  wav: "Supported"       # Audio files
+  mp3: "Supported"       # Audio files
+
+notes: |
+  Valve has historically been very supportive of modding communities.
+  Source SDK and Source 2 tools are provided for developers.
+  Many successful games started as Valve mods (Counter-Strike, Team Fortress, etc.).
+  
+  Official policy allows:
+  - Creating mods and total conversions
+  - Educational and research use
+  - Asset extraction for compatible mods
+  
+  Restrictions:
+  - Commercial redistribution requires licensing
+  - Cannot distribute complete game assets outside mod context
+  - Respect game-specific EULAs (some may have additional restrictions)

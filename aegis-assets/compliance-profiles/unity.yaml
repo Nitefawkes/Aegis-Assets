@@ -1,0 +1,35 @@
+# Unity Engine - Neutral (Engine-level profile)
+publisher: "Unity Technologies"
+game_id: "unity"  # Generic Unity games identifier
+enforcement_level: "Neutral"
+official_support: false  # Unity doesn't officially support asset extraction
+bounty_eligible: true
+enterprise_warning: |
+  Unity games vary widely in their IP policies. This profile applies to 
+  the Unity engine format itself, not specific game publishers. Always 
+  check the individual game/publisher policy before extraction.
+mod_policy_url: null
+
+supported_formats:
+  unity3d: "CommunityOnly"    # Unity asset bundles (legacy)
+  assets: "CommunityOnly"     # Unity serialized assets
+  resS: "CommunityOnly"       # Unity resource files
+  resource: "CommunityOnly"   # Unity resource files
+  sharedAssets: "CommunityOnly" # Unity shared assets
+
+notes: |
+  Unity is a game engine used by thousands of developers worldwide.
+  Each game has its own publisher and IP policies.
+  
+  Common considerations for Unity games:
+  - Indie games: Often more permissive, but check individual policies
+  - Mobile games: Frequently have restrictive terms
+  - AAA games: Usually have strict IP enforcement
+  
+  Technical notes:
+  - Unity formats change frequently across engine versions
+  - Asset encryption is possible but not standard
+  - Most Unity games store assets in easily accessible formats
+  
+  Always verify the specific game's publisher policy before extraction.
+  This profile serves as a fallback for unknown Unity titles.

@@ -1,0 +1,47 @@
+[package]
+name = "aegis-unity-plugin"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Unity engine plugin for Aegis-Assets"
+keywords = ["unity", "game", "assets", "extraction"]
+
+[dependencies]
+# Core aegis dependencies
+aegis-core = { path = "../../aegis-core" }
+
+# Workspace dependencies
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+chrono.workspace = true
+blake3.workspace = true
+uuid.workspace = true
+byteorder.workspace = true
+nom.workspace = true
+flate2.workspace = true
+lz4_flex.workspace = true
+tracing.workspace = true
+
+# Unity-specific dependencies
+lzma-rs = "0.3"      # LZMA compression used in some Unity versions
+
+[features]
+default = ["all-versions"]
+all-versions = ["unity-3", "unity-4", "unity-5", "unity-2017", "unity-2018", "unity-2019", "unity-2020", "unity-2021", "unity-2022", "unity-2023"]
+unity-3 = []
+unity-4 = []
+unity-5 = []
+unity-2017 = []
+unity-2018 = []
+unity-2019 = []
+unity-2020 = []
+unity-2021 = []
+unity-2022 = []
+unity-2023 = []
+
+[dev-dependencies]
+tempfile = "3.8"

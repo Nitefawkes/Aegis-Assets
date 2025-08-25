@@ -1,0 +1,75 @@
+[workspace]
+members = [
+    "aegis-core",
+    "aegis-python",
+    "aegis-plugins/unity",
+    "aegis-plugins/unreal",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Aegis-Assets Team <contact@aegis-assets.org>"]
+license = "Apache-2.0"
+repository = "https://github.com/aegis-assets/aegis-assets"
+homepage = "https://aegis-assets.org"
+description = "Compliance-first platform for game asset extraction, preservation, and creative workflows"
+keywords = ["game", "assets", "extraction", "modding", "compliance"]
+categories = ["game-development", "multimedia", "filesystem"]
+
+[workspace.dependencies]
+# Core dependencies
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+anyhow = "1.0"
+thiserror = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+blake3 = "1.5"
+uuid = { version = "1.0", features = ["v4", "serde"] }
+
+# Performance & I/O
+tokio = { version = "1.0", features = ["full"] }
+rayon = "1.8"
+memmap2 = "0.9"
+byteorder = "1.5"
+nom = "7.1"
+
+# Graphics & Export
+gltf-json = "1.4"
+image = { version = "0.24", features = ["png", "jpeg"] }
+basis-universal = "0.3"
+
+# Compression
+flate2 = "1.0"
+lz4_flex = "0.11"
+xz2 = "0.1"
+
+# Python bindings (for aegis-python)
+pyo3 = { version = "0.20", features = ["extension-module"], optional = true }
+
+# Logging & Diagnostics
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# CLI (for main binary)
+clap = { version = "4.4", features = ["derive"], optional = true }
+
+[profile.release]
+# Optimize for performance
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[profile.dev]
+# Faster compilation in debug
+opt-level = 1
+overflow-checks = true
+
+# Performance profiling profile
+[profile.profiling]
+inherits = "release"
+debug = 1
+strip = false

@@ -1,0 +1,43 @@
+[package]
+name = "aegis-cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Command-line interface for Aegis-Assets"
+keywords = ["cli", "game", "assets", "extraction"]
+
+[[bin]]
+name = "aegis"
+path = "src/main.rs"
+
+[dependencies]
+# Core aegis dependencies
+aegis-core = { path = "../aegis-core" }
+aegis-unity-plugin = { path = "../aegis-plugins/unity" }
+
+# Workspace dependencies
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+anyhow.workspace = true
+chrono.workspace = true
+
+# CLI-specific dependencies
+clap = { version = "4.4", features = ["derive", "color"] }
+indicatif = "0.17"
+console = "0.15"
+dialoguer = "0.11"
+tabled = "0.15"
+colored = "2.1"
+
+# Logging
+tracing.workspace = true
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+
+[features]
+default = ["all-plugins"]
+all-plugins = ["unity", "unreal"]
+unity = []
+unreal = []

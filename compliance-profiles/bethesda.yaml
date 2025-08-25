@@ -1,0 +1,22 @@
+# Bethesda Game Studios - Permissive Publisher
+publisher: "Bethesda Game Studios"
+game_id: null  # Applies to all Bethesda games
+enforcement_level: "Permissive"
+official_support: true
+bounty_eligible: true
+enterprise_warning: null
+mod_policy_url: "https://bethesda.net/en/article/2Ln5zW6CmWSQGUuycokckK/bethesda-game-studios-and-mods"
+
+supported_formats:
+  ba2: "Supported"      # Bethesda Archive 2
+  bsa: "Supported"      # Bethesda Software Archive  
+  nif: "Supported"      # NetImmerse/Gamebryo mesh format
+  dds: "Supported"      # DirectDraw Surface textures
+  esp: "CommunityOnly"  # Plugin files (more sensitive)
+  esm: "CommunityOnly"  # Master files (more sensitive)
+
+notes: |
+  Bethesda has a long history of supporting modding communities.
+  Official Creation Kit tools are provided for most games.
+  Asset extraction for modding purposes is generally accepted.
+  Commercial use requires separate licensing.

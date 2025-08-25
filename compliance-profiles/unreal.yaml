@@ -1,0 +1,41 @@
+# Unreal Engine - Neutral (Engine-level profile)
+publisher: "Epic Games"
+game_id: "unreal"  # Generic Unreal games identifier  
+enforcement_level: "Neutral"
+official_support: true  # Epic provides modding tools for some games
+bounty_eligible: true
+enterprise_warning: |
+  Unreal Engine games have varying IP policies depending on the publisher.
+  Epic Games generally supports modding but individual game policies vary.
+  Always check the specific game/publisher policy before extraction.
+mod_policy_url: "https://www.epicgames.com/site/en-US/tos"
+
+supported_formats:
+  pak: "CommunityOnly"      # Unreal Engine 4/5 package files
+  uasset: "CommunityOnly"   # Unreal asset files
+  umap: "CommunityOnly"     # Unreal map files  
+  ubulk: "CommunityOnly"    # Unreal bulk data
+  utoc: "CommunityOnly"     # Unreal table of contents (UE5)
+  ucas: "CommunityOnly"     # Unreal content addressable store (UE5)
+
+notes: |
+  Unreal Engine is used by many AAA and indie developers.
+  Epic Games provides official modding support for some titles (Fortnite Creative, etc.).
+  
+  Publisher-specific considerations:
+  - Epic's own games: Generally modding-friendly
+  - Third-party AAA: Usually restrictive (check individual policies)
+  - Indie games: Often more permissive
+  
+  Technical notes:
+  - UE4 uses .pak files with optional encryption
+  - UE5 introduced IoStore system (.utoc/.ucas files)
+  - Encryption keys may be required for protected content
+  - .uasset files contain serialized object data
+  
+  Format evolution:
+  - UE4: PAK-based system, relatively stable
+  - UE5: IoStore system, improved compression and loading
+  - Version-specific serialization formats
+  
+  Always verify publisher-specific policies before extraction.

@@ -1,0 +1,32 @@
+# Nintendo - High Risk Publisher
+publisher: "Nintendo"
+game_id: null  # Applies to all Nintendo games
+enforcement_level: "HighRisk"
+official_support: false
+bounty_eligible: false
+enterprise_warning: |
+  Nintendo actively enforces intellectual property rights and has a history 
+  of DMCA takedowns against fan projects and modding tools. Institutional 
+  use is strongly discouraged without explicit legal counsel.
+mod_policy_url: null
+
+supported_formats:
+  sarc: "NotSupported"     # Nintendo archive format
+  bfres: "NotSupported"    # Binary cafe resource
+  bcsar: "NotSupported"    # Binary cafe sound archive
+  bntx: "NotSupported"     # Binary NTX texture
+  bnsh: "NotSupported"     # Binary shader
+  byml: "NotSupported"     # Binary YAML
+
+notes: |
+  Nintendo does not provide official modding support for most games.
+  The company has consistently opposed fan projects using their assets.
+  Legal precedent suggests high risk for any commercial or public use.
+  
+  Alternatives:
+  - Check for officially licensed development tools
+  - Consider clean-room implementations for research
+  - Focus on gameplay mechanics rather than assets
+  
+  This profile reflects Nintendo's historical enforcement patterns as of 2024.
+  Always consult current legal guidance before proceeding.

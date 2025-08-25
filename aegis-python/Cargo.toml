@@ -1,0 +1,29 @@
+[package]
+name = "aegis-python"
+version.workspace = true
+edition = "2021"
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Python bindings for Aegis-Assets"
+keywords = ["python", "bindings", "game", "assets"]
+
+[lib]
+name = "aegis_python"
+crate-type = ["cdylib"]
+
+[dependencies]
+# Core aegis dependencies
+aegis-core = { path = "../aegis-core" }
+
+# Workspace dependencies
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+chrono.workspace = true
+
+# Python bindings
+pyo3 = { workspace = true, features = ["extension-module"] }
+
+[build-dependencies]
+pyo3-build-config = "0.20"

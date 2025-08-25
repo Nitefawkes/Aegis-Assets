@@ -1,0 +1,58 @@
+[package]
+name = "aegis-core"
+version.workspace = true
+edition = "2021"
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Core engine for Aegis-Assets: compliance-first game asset extraction"
+keywords = ["game", "assets", "extraction", "engine"]
+
+[dependencies]
+# Workspace dependencies
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+chrono.workspace = true
+blake3.workspace = true
+uuid.workspace = true
+tokio.workspace = true
+rayon.workspace = true
+memmap2.workspace = true
+byteorder.workspace = true
+nom.workspace = true
+gltf-json.workspace = true
+image.workspace = true
+flate2.workspace = true
+lz4_flex.workspace = true
+xz2.workspace = true
+tracing.workspace = true
+
+# Additional core-specific dependencies
+walkdir = "2.4"
+once_cell = "1.19"
+dashmap = "5.5"
+
+[features]
+default = ["all-formats"]
+all-formats = ["unity", "unreal", "source", "bethesda"]
+unity = []
+unreal = []
+source = []
+bethesda = []
+
+# AI features (future)
+ai-tagging = []
+ai-upscaling = []
+
+# Enterprise features
+enterprise = ["audit-trails", "compliance-verification"]
+audit-trails = []
+compliance-verification = []
+
+[dev-dependencies]
+tempfile = "3.8"
+criterion = "0.5"
+proptest = "1.4"

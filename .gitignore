@@ -1,0 +1,69 @@
+# Build artifacts
+/target/
+**/target/
+
+# Python bindings
+aegis-python/target/
+*.so
+*.pyd
+*.egg-info/
+build/
+dist/
+
+# IDE/Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Environment variables
+.env
+.env.local
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Game files (for testing - never commit actual game assets)
+*.unity3d
+*.pak
+*.uasset
+*.bsa
+*.ba2
+
+# Test artifacts
+test-output/
+fixtures/
+*.fixture
+
+# Coverage reports
+coverage/
+*.profraw
+
+# Documentation build artifacts
+book/
+docs/build/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# Rust cache
+.cargo/

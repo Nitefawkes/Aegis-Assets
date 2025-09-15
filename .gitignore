@@ -45,11 +45,32 @@ temp/
 *.uasset
 *.bsa
 *.ba2
+*.assets
+*.bundle
 
-# Test artifacts
+# Test artifacts and output directories
 test-output/
 fixtures/
 *.fixture
+compression_test/
+conversion_test/
+demo_output/
+extracted_*/
+final_demo_extraction/
+real_*/
+user_demo/
+unreal_test/
+
+# Database files (generated)
+*.db
+assets.db
+
+# Demo HTML files (temporary UI prototypes)
+api_demo.html
+
+# Test directories with generated assets
+test_db_assets/
+test_gltf/
 
 # Coverage reports
 coverage/

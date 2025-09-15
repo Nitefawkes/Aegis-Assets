@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aegis-Assets</title>
+    <style>
+        /* Reset and Base */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            font-size: 14px;
+            line-height: 1.5;
+            color: #2c3e50;
+            background-color: #f8f9fa;
+            overflow-x: hidden;
+        }
+        
+        /* Layout */
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            background: white;
+            border-bottom: 1px solid #e9ecef;
+            padding: 16px 0;
+            margin-bottom: 24px;
+        }
+        
+        .header h1 {
+            font-size: 24px;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+        
+        .header p {
+            color: #6c757d;
+            margin-top: 4px;
+        }
+        
+        /* Cards */
+        .card {
+            background: white;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        
+        .card h2 {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: #2c3e50;
+        }
+        
+        /* Drop Zone */
+        .drop-zone {
+            border: 2px dashed #dee2e6;
+            border-radius: 8px;
+            padding: 48px 24px;
+            text-align: center;
+            transition: all 0.2s ease;
+            cursor: pointer;
+            background-color: #fafbfc;
+        }
+        
+        .drop-zone:hover {
+            border-color: #6c757d;
+            background-color: #f8f9fa;
+        }
+        
+        .drop-zone.dragover {
+            border-color: #007bff;
+            background-color: #f0f8ff;
+        }
+        
+        .drop-zone-content h3 {
+            font-size: 16px;
+            font-weight: 500;
+            margin-bottom: 8px;
+            color: #495057;
+        }
+        
+        .drop-zone-content p {
+            color: #6c757d;
+            margin-bottom: 16px;
+        }
+        
+        /* Buttons */
+        .btn {
+            display: inline-block;
+            padding: 8px 16px;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            background: white;
+            color: #495057;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .btn:hover {
+            background: #f8f9fa;
+            border-color: #adb5bd;
+        }
+        
+        .btn-primary {
+            background: #007bff;
+            border-color: #007bff;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #0056b3;
+            border-color: #0056b3;
+        }
+        
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 13px;
+        }
+        
+        /* Forms */
+        .form-group {
+            margin-bottom: 16px;
+        }
+        
+        .form-label {
+            display: block;
+            font-weight: 500;
+            margin-bottom: 6px;
+            color: #495057;
+        }
+        
+        .form-control {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ced4da;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.2s ease;
+        }
+        
+        .form-control:focus {
+            outline: none;
+            border-color: #007bff;
+            box-shadow: 0 0 0 3px rgba(0,123,255,0.1);
+        }
+        
+        .form-row {
+            display: flex;
+            gap: 16px;
+        }
+        
+        .form-row .form-group {
+            flex: 1;
+        }
+        
+        /* Progress */
+        .progress {
+            height: 8px;
+            background: #e9ecef;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 16px 0;
+        }
+        
+        .progress-bar {
+            height: 100%;
+            background: #007bff;
+            transition: width 0.3s ease;
+        }
+        
+        /* Lists */
+        .list {
+            border: 1px solid #e9ecef;
+            border-radius: 6px;
+            background: white;
+        }
+        
+        .list-item {
+            padding: 12px 16px;
+            border-bottom: 1px solid #e9ecef;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .list-item:last-child {
+            border-bottom: none;
+        }
+        
+        .list-item:hover {
+            background: #f8f9fa;
+        }
+        
+        .list-item-content {
+            flex: 1;
+        }
+        
+        .list-item-title {
+            font-weight: 500;
+            color: #2c3e50;
+        }
+        
+        .list-item-subtitle {
+            font-size: 13px;
+            color: #6c757d;
+            margin-top: 2px;
+        }
+        
+        .list-item-actions {
+            display: flex;
+            gap: 8px;
+        }
+        
+        /* Status */
+        .status {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        
+        .status-success {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .status-warning {
+            background: #fff3cd;
+            color: #856404;
+        }
+        
+        .status-info {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+        
+        /* Layout Grid */
+        .grid {
+            display: grid;
+            gap: 24px;
+        }
+        
+        .grid-2 {
+            grid-template-columns: 1fr 1fr;
+        }
+        
+        .grid-3 {
+            grid-template-columns: 1fr 1fr 1fr;
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .container {
+                padding: 16px;
+            }
+            
+            .grid-2,
+            .grid-3 {
+                grid-template-columns: 1fr;
+            }
+            
+            .form-row {
+                flex-direction: column;
+            }
+        }
+        
+        /* Hidden */
+        .hidden {
+            display: none;
+        }
+        
+        /* Loading */
+        .loading {
+            text-align: center;
+            padding: 24px;
+            color: #6c757d;
+        }
+        
+        /* Tables */
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 16px;
+        }
+        
+        .table th,
+        .table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e9ecef;
+        }
+        
+        .table th {
+            font-weight: 600;
+            color: #495057;
+            background: #f8f9fa;
+        }
+        
+        .table tbody tr:hover {
+            background: #f8f9fa;
+        }
+        
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 48px 24px;
+            color: #6c757d;
+        }
+        
+        .empty-state h3 {
+            font-size: 16px;
+            margin-bottom: 8px;
+            color: #495057;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="container">
+            <h1>Aegis-Assets</h1>
+            <p>Game asset extraction and management</p>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Extract Section -->
+        <div class="card">
+            <h2>Extract Assets</h2>
+            <div class="drop-zone" id="dropZone">
+                <div class="drop-zone-content">
+                    <h3>Drop game files here</h3>
+                    <p>Supports Unity (.unity3d, .assets), Unreal (.pak, .uasset), and other formats</p>
+                    <button class="btn btn-primary" onclick="selectFiles()">Choose Files</button>
+                    <input type="file" id="fileInput" multiple accept=".unity3d,.assets,.pak,.uasset" style="display: none;">
+                </div>
+            </div>
+            
+            <!-- Extraction Options -->
+            <div class="form-row" style="margin-top: 16px;">
+                <div class="form-group">
+                    <label class="form-label">Output Directory</label>
+                    <input type="text" class="form-control" id="outputDir" value="./extracted" placeholder="Enter output path">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Game Name</label>
+                    <input type="text" class="form-control" id="gameName" placeholder="Optional: Game identifier">
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="convertAssets" checked> Convert assets to standard formats (PNG, glTF, OGG)
+                </label>
+            </div>
+            
+            <!-- Progress -->
+            <div id="extractProgress" class="hidden">
+                <div class="progress">
+                    <div class="progress-bar" id="progressBar" style="width: 0%"></div>
+                </div>
+                <p id="progressText">Processing...</p>
+            </div>
+        </div>
+
+        <div class="grid grid-2">
+            <!-- Recent Extractions -->
+            <div class="card">
+                <h2>Recent Extractions</h2>
+                <div id="recentExtractions">
+                    <div class="loading">No extractions yet</div>
+                </div>
+            </div>
+
+            <!-- System Status -->
+            <div class="card">
+                <h2>System Status</h2>
+                <div id="systemStatus">
+                    <div class="list">
+                        <div class="list-item">
+                            <div class="list-item-content">
+                                <div class="list-item-title">API Server</div>
+                                <div class="list-item-subtitle">Checking connection...</div>
+                            </div>
+                            <span class="status status-info" id="apiStatus">Connecting</span>
+                        </div>
+                        <div class="list-item">
+                            <div class="list-item-content">
+                                <div class="list-item-title">Plugins</div>
+                                <div class="list-item-subtitle" id="pluginsInfo">Loading...</div>
+                            </div>
+                            <span class="status status-info">Ready</span>
+                        </div>
+                        <div class="list-item">
+                            <div class="list-item-content">
+                                <div class="list-item-title">Database</div>
+                                <div class="list-item-subtitle" id="dbInfo">Checking...</div>
+                            </div>
+                            <span class="status status-info" id="dbStatus">Ready</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Asset Browser -->
+        <div class="card">
+            <h2>Asset Browser</h2>
+            <div class="form-row">
+                <div class="form-group">
+                    <input type="text" class="form-control" id="searchInput" placeholder="Search assets...">
+                </div>
+                <div class="form-group" style="flex: 0 0 150px;">
+                    <select class="form-control" id="typeFilter">
+                        <option value="">All Types</option>
+                        <option value="Texture">Textures</option>
+                        <option value="Mesh">Meshes</option>
+                        <option value="Audio">Audio</option>
+                        <option value="Material">Materials</option>
+                        <option value="Level">Levels</option>
+                    </select>
+                </div>
+                <div class="form-group" style="flex: 0 0 100px;">
+                    <button class="btn btn-primary" onclick="searchAssets()">Search</button>
+                </div>
+            </div>
+            
+            <div id="assetResults">
+                <div class="empty-state">
+                    <h3>No assets loaded</h3>
+                    <p>Search for assets or extract some files to get started</p>
+                    <button class="btn" onclick="loadAllAssets()">Load All Assets</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://127.0.0.1:3000/api/v1';
+        let extractionInProgress = false;
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            checkSystemStatus();
+            setupDragDrop();
+            setupSearch();
+        });
+
+        // System Status Check
+        async function checkSystemStatus() {
+            try {
+                // Check API
+                const healthResponse = await fetch(`${API_BASE}/health`);
+                const health = await healthResponse.json();
+                
+                document.getElementById('apiStatus').textContent = 'Connected';
+                document.getElementById('apiStatus').className = 'status status-success';
+                
+                // Check database stats
+                const statsResponse = await fetch(`${API_BASE}/assets/stats`);
+                const stats = await statsResponse.json();
+                
+                document.getElementById('dbInfo').textContent = `${stats.total_assets} assets indexed`;
+                document.getElementById('dbStatus').textContent = 'Ready';
+                document.getElementById('dbStatus').className = 'status status-success';
+                
+                // Update plugins info
+                document.getElementById('pluginsInfo').textContent = 'Unity, Unreal Engine';
+                
+            } catch (error) {
+                document.getElementById('apiStatus').textContent = 'Offline';
+                document.getElementById('apiStatus').className = 'status status-warning';
+                document.getElementById('dbStatus').textContent = 'Unavailable';
+                document.getElementById('dbStatus').className = 'status status-warning';
+            }
+        }
+
+        // Drag and Drop
+        function setupDragDrop() {
+            const dropZone = document.getElementById('dropZone');
+
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropZone.classList.add('dragover');
+            });
+
+            dropZone.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                if (!dropZone.contains(e.relatedTarget)) {
+                    dropZone.classList.remove('dragover');
+                }
+            });
+
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('dragover');
+                
+                const files = Array.from(e.dataTransfer.files);
+                handleFiles(files);
+            });
+        }
+
+        function selectFiles() {
+            document.getElementById('fileInput').click();
+        }
+
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            const files = Array.from(e.target.files);
+            handleFiles(files);
+        });
+
+        // File Handling
+        function handleFiles(files) {
+            if (files.length === 0) return;
+            
+            console.log('Selected files:', files.map(f => f.name));
+            
+            // Update UI to show selected files
+            const dropZone = document.getElementById('dropZone');
+            const content = dropZone.querySelector('.drop-zone-content');
+            
+            if (files.length === 1) {
+                content.innerHTML = `
+                    <h3>Selected: ${files[0].name}</h3>
+                    <p>Ready to extract • ${(files[0].size / 1024 / 1024).toFixed(1)} MB</p>
+                    <button class="btn btn-primary" onclick="startExtraction()">Extract Assets</button>
+                    <button class="btn btn-sm" onclick="clearSelection()" style="margin-left: 8px;">Clear</button>
+                `;
+            } else {
+                content.innerHTML = `
+                    <h3>Selected: ${files.length} files</h3>
+                    <p>Ready to extract • ${(files.reduce((total, f) => total + f.size, 0) / 1024 / 1024).toFixed(1)} MB total</p>
+                    <button class="btn btn-primary" onclick="startExtraction()">Extract Assets</button>
+                    <button class="btn btn-sm" onclick="clearSelection()" style="margin-left: 8px;">Clear</button>
+                `;
+            }
+        }
+
+        function clearSelection() {
+            const dropZone = document.getElementById('dropZone');
+            const content = dropZone.querySelector('.drop-zone-content');
+            content.innerHTML = `
+                <h3>Drop game files here</h3>
+                <p>Supports Unity (.unity3d, .assets), Unreal (.pak, .uasset), and other formats</p>
+                <button class="btn btn-primary" onclick="selectFiles()">Choose Files</button>
+            `;
+            document.getElementById('fileInput').value = '';
+        }
+
+        // Extraction
+        function startExtraction() {
+            if (extractionInProgress) return;
+            
+            extractionInProgress = true;
+            const progressDiv = document.getElementById('extractProgress');
+            const progressBar = document.getElementById('progressBar');
+            const progressText = document.getElementById('progressText');
+            
+            progressDiv.classList.remove('hidden');
+            progressText.textContent = 'Starting extraction...';
+            
+            // Simulate extraction progress
+            let progress = 0;
+            const interval = setInterval(() => {
+                progress += Math.random() * 15;
+                if (progress > 100) progress = 100;
+                
+                progressBar.style.width = progress + '%';
+                
+                if (progress < 30) {
+                    progressText.textContent = 'Reading file structure...';
+                } else if (progress < 60) {
+                    progressText.textContent = 'Extracting assets...';
+                } else if (progress < 90) {
+                    progressText.textContent = 'Converting formats...';
+                } else if (progress < 100) {
+                    progressText.textContent = 'Finalizing...';
+                } else {
+                    progressText.textContent = 'Extraction complete!';
+                    clearInterval(interval);
+                    setTimeout(() => {
+                        progressDiv.classList.add('hidden');
+                        extractionInProgress = false;
+                        clearSelection();
+                        addRecentExtraction();
+                        checkSystemStatus(); // Refresh stats
+                    }, 1500);
+                }
+            }, 200);
+        }
+
+        function addRecentExtraction() {
+            const container = document.getElementById('recentExtractions');
+            const now = new Date();
+            
+            container.innerHTML = `
+                <div class="list">
+                    <div class="list-item">
+                        <div class="list-item-content">
+                            <div class="list-item-title">Sample extraction</div>
+                            <div class="list-item-subtitle">${now.toLocaleString()} • 42 assets extracted</div>
+                        </div>
+                        <div class="list-item-actions">
+                            <button class="btn btn-sm">View</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Search
+        function setupSearch() {
+            document.getElementById('searchInput').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    searchAssets();
+                }
+            });
+        }
+
+        async function searchAssets() {
+            const query = document.getElementById('searchInput').value.trim();
+            const typeFilter = document.getElementById('typeFilter').value;
+            const resultsDiv = document.getElementById('assetResults');
+            
+            resultsDiv.innerHTML = '<div class="loading">Searching...</div>';
+            
+            try {
+                let url = `${API_BASE}/assets?limit=20`;
+                
+                if (query) {
+                    url = `${API_BASE}/assets/search?q=${encodeURIComponent(query)}&limit=20`;
+                }
+                
+                if (typeFilter) {
+                    url += `&asset_type=${typeFilter}`;
+                }
+                
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                displayAssets(query ? data.results : data.assets.map(asset => ({ asset, relevance_score: 1 })));
+                
+            } catch (error) {
+                resultsDiv.innerHTML = `
+                    <div class="empty-state">
+                        <h3>Search failed</h3>
+                        <p>Could not connect to the API server</p>
+                    </div>
+                `;
+            }
+        }
+
+        async function loadAllAssets() {
+            const resultsDiv = document.getElementById('assetResults');
+            resultsDiv.innerHTML = '<div class="loading">Loading assets...</div>';
+            
+            try {
+                const response = await fetch(`${API_BASE}/assets?limit=50`);
+                const data = await response.json();
+                
+                if (data.assets.length === 0) {
+                    resultsDiv.innerHTML = `
+                        <div class="empty-state">
+                            <h3>No assets found</h3>
+                            <p>Extract some files to populate the asset database</p>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                displayAssets(data.assets.map(asset => ({ asset, relevance_score: 1 })));
+                
+            } catch (error) {
+                resultsDiv.innerHTML = `
+                    <div class="empty-state">
+                        <h3>Could not load assets</h3>
+                        <p>Make sure the API server is running</p>
+                        <button class="btn" onclick="checkSystemStatus()">Retry</button>
+                    </div>
+                `;
+            }
+        }
+
+        function displayAssets(results) {
+            const resultsDiv = document.getElementById('assetResults');
+            
+            if (results.length === 0) {
+                resultsDiv.innerHTML = `
+                    <div class="empty-state">
+                        <h3>No assets found</h3>
+                        <p>Try a different search term or extract more files</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            let html = `
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Type</th>
+                            <th>Size</th>
+                            <th>Game</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            results.forEach(result => {
+                const asset = result.asset;
+                html += `
+                    <tr>
+                        <td>
+                            <div class="list-item-title">${asset.name}</div>
+                            ${asset.tags.length > 0 ? `<div class="list-item-subtitle">${asset.tags.join(', ')}</div>` : ''}
+                        </td>
+                        <td>${asset.asset_type}</td>
+                        <td>${(asset.file_size / 1024).toFixed(1)} KB</td>
+                        <td>${asset.game_id || 'Unknown'}</td>
+                        <td>
+                            <button class="btn btn-sm" onclick="viewAsset('${asset.id}')">View</button>
+                        </td>
+                    </tr>
+                `;
+            });
+            
+            html += '</tbody></table>';
+            resultsDiv.innerHTML = html;
+        }
+
+        function viewAsset(assetId) {
+            alert(`Viewing asset: ${assetId}\n\nThis would open asset details or preview.`);
+        }
+    </script>
+</body>
+</html>

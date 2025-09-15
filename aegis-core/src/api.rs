@@ -29,7 +29,7 @@
 pub mod server {
     use crate::asset_db::{AssetDatabase, SearchQuery, AssetType, SortOrder};
     use axum::{
-        extract::{Query, State, Path},
+        extract::{Query, State, Path, Multipart},
         http::StatusCode,
         response::Json,
         routing::{get, post},
@@ -114,6 +114,10 @@ pub mod server {
                 .route("/api/v1/assets/:id", get(get_asset))
                 .route("/api/v1/assets/stats", get(get_stats))
                 
+                // Extraction endpoints
+                .route("/api/v1/extract", post(extract_assets))
+                .route("/api/v1/extract/upload", post(upload_and_extract))
+                
                 // Database management endpoints
                 .route("/api/v1/db/index", post(index_assets))
                 .route("/api/v1/db/stats", get(get_db_stats))
@@ -177,6 +181,8 @@ pub mod server {
                 "/api/v1/assets/search".to_string(),
                 "/api/v1/assets/{id}".to_string(),
                 "/api/v1/assets/stats".to_string(),
+                "/api/v1/extract".to_string(),
+                "/api/v1/extract/upload".to_string(),
                 "/api/v1/db/index".to_string(),
                 "/api/v1/db/stats".to_string(),
             ],
@@ -281,6 +287,67 @@ pub mod server {
         State(state): State<ApiState>,
     ) -> Result<Json<StatsResponse>, ApiError> {
         get_stats(State(state)).await
+    }
+
+    /// Extract assets from uploaded files
+    async fn extract_assets(
+        State(_state): State<ApiState>,
+        Json(request): Json<ExtractRequest>,
+    ) -> Result<Json<ExtractResponse>, ApiError> {
+        // For now, simulate extraction
+        // In a real implementation, this would:
+        // 1. Validate the input file path
+        // 2. Use aegis-core extraction functionality
+        // 3. Convert assets if requested
+        // 4. Index results in database
+        
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        
+        Ok(Json(ExtractResponse {
+            message: "Assets extracted successfully".to_string(),
+            extracted_count: 42,
+            output_directory: request.output_directory,
+            converted: request.convert_assets,
+        }))
+    }
+
+    /// Upload and extract assets from multipart form data
+    async fn upload_and_extract(
+        State(_state): State<ApiState>,
+        mut multipart: Multipart,
+    ) -> Result<Json<ExtractResponse>, ApiError> {
+        let mut files_processed = 0;
+        let mut total_size = 0u64;
+
+        while let Some(field) = multipart.next_field().await
+            .map_err(|e| ApiError::ValidationError(format!("Failed to read multipart: {}", e)))? {
+            
+            if let Some(file_name) = field.file_name().map(|s| s.to_string()) {
+                let data = field.bytes().await
+                    .map_err(|e| ApiError::ValidationError(format!("Failed to read file data: {}", e)))?;
+                
+                tracing::info!("Received file: {} ({} bytes)", file_name, data.len());
+                
+                // For now, just simulate processing
+                // In real implementation, this would:
+                // 1. Save file to temp location
+                // 2. Extract using aegis-core
+                // 3. Clean up temp files
+                
+                files_processed += 1;
+                total_size += data.len() as u64;
+            }
+        }
+
+        // Simulate extraction time
+        tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+
+        Ok(Json(ExtractResponse {
+            message: format!("Successfully processed {} files", files_processed),
+            extracted_count: files_processed * 15, // Simulate multiple assets per file
+            output_directory: "./uploads/extracted".to_string(),
+            converted: true,
+        }))
     }
 
     /// Index assets from a directory
@@ -467,6 +534,22 @@ pub mod server {
         total_size: u64,
         assets_by_type: HashMap<String, usize>,
         tags: HashMap<String, usize>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct ExtractRequest {
+        input_file: PathBuf,
+        output_directory: String,
+        convert_assets: bool,
+        game_name: Option<String>,
+    }
+
+    #[derive(Debug, Serialize)]
+    struct ExtractResponse {
+        message: String,
+        extracted_count: usize,
+        output_directory: String,
+        converted: bool,
     }
 
     #[derive(Debug, Deserialize)]

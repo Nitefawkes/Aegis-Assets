@@ -16,7 +16,6 @@
 
 use aegis_core::{
     archive::{ArchiveHandler, ComplianceProfile, EntryMetadata, EntryId, Provenance, PluginInfo},
-    resource::Resource,
     PluginFactory,
 };
 use anyhow::{Result, bail};
@@ -79,17 +78,21 @@ impl UnrealArchive {
         if bytes.len() < 16 {
             return false;
         }
-        
+
         // Check for PAK file signature
-        if bytes.len() >= 4 && bytes[bytes.len()-44..bytes.len()-40] == [0x5A, 0x6F, 0x12, 0xE1] {
-            return true; // PAK file magic at end of file
+        if bytes.len() >= 44 {
+            let magic_offset = bytes.len() - 44;
+            let magic = &bytes[magic_offset..magic_offset + 4];
+            if magic == [0x5A, 0x6F, 0x12, 0xE1] {
+                return true; // PAK file magic at end of file
+            }
         }
-        
+
         // Check for IoStore signature (UE5)
         if bytes.starts_with(b"-==--==--==--==-") {
             return true; // UTOC signature
         }
-        
+
         // Check for asset file signatures
         if bytes.len() >= 8 {
             // UAsset files typically start with a specific pattern
@@ -98,8 +101,35 @@ impl UnrealArchive {
                 return true; // UAsset signature
             }
         }
-        
+
         false
+    }
+
+    /// Check if this is a PAK file
+    fn is_pak_file(&self, data: &[u8]) -> bool {
+        if data.len() < 44 {
+            return false;
+        }
+
+        // PAK files have a magic number at the end of the file
+        let magic_offset = data.len() - 44;
+        let magic = &data[magic_offset..magic_offset + 4];
+        magic == [0x5A, 0x6F, 0x12, 0xE1] // "Zo\x12\xe1"
+    }
+
+    /// Check if this is a UAsset file
+    fn is_uasset_file(&self, data: &[u8]) -> bool {
+        if data.len() < 4 {
+            return false;
+        }
+
+        let signature = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+        signature == 0x9E2A83C1 || signature == 0xC1832A9E
+    }
+
+    /// Check if this is an IoStore file (UE5)
+    fn is_iostore_file(&self, data: &[u8]) -> bool {
+        data.starts_with(b"-==--==--==--==-")
     }
     
     /// Open Unreal archive (stub implementation)
@@ -176,7 +206,7 @@ impl ArchiveHandler for UnrealArchive {
     fn detect(bytes: &[u8]) -> bool {
         UnrealArchive::detect(bytes)
     }
-    
+
     fn open(path: &Path) -> Result<Self> {
         UnrealArchive::open(path)
     }
@@ -186,13 +216,59 @@ impl ArchiveHandler for UnrealArchive {
     }
     
     fn list_entries(&self) -> Result<Vec<EntryMetadata>> {
-        // Stub implementation - would parse actual file structure
-        bail!("Unreal Engine plugin is not fully implemented yet. This is a placeholder for the complete implementation planned in Phase 2.")
+        let data = std::fs::read(&self.file_path)?;
+        let mut entries = Vec::new();
+
+        if self.is_pak_file(&data) {
+            // PAK file detected
+            let entry = EntryMetadata {
+                id: EntryId::new("pak_main".to_string()),
+                name: "PAK_Archive".to_string(),
+                path: PathBuf::from("pak_archive"),
+                size_compressed: Some(data.len() as u64),
+                size_uncompressed: data.len() as u64,
+                file_type: Some("pak".to_string()),
+                last_modified: None,
+                checksum: None,
+            };
+            entries.push(entry);
+        } else if self.is_uasset_file(&data) {
+            // UAsset file detected
+            let entry = EntryMetadata {
+                id: EntryId::new("uasset_main".to_string()),
+                name: "UAsset".to_string(),
+                path: PathBuf::from("uasset_file"),
+                size_compressed: Some(data.len() as u64),
+                size_uncompressed: data.len() as u64,
+                file_type: Some("uasset".to_string()),
+                last_modified: None,
+                checksum: None,
+            };
+            entries.push(entry);
+        } else if self.is_iostore_file(&data) {
+            // IoStore file detected
+            let entry = EntryMetadata {
+                id: EntryId::new("iostore_main".to_string()),
+                name: "IoStore".to_string(),
+                path: PathBuf::from("iostore_file"),
+                size_compressed: Some(data.len() as u64),
+                size_uncompressed: data.len() as u64,
+                file_type: Some("utoc".to_string()),
+                last_modified: None,
+                checksum: None,
+            };
+            entries.push(entry);
+        } else {
+            bail!("Unsupported Unreal Engine file format")
+        }
+
+        Ok(entries)
     }
+
     
-    fn read_entry(&self, id: &EntryId) -> Result<Vec<u8>> {
-        // Stub implementation - would extract actual asset data
-        bail!("Unreal Engine plugin is not fully implemented yet. Asset extraction will be available in Phase 2.")
+    fn read_entry(&self, _id: &EntryId) -> Result<Vec<u8>> {
+        // Basic placeholder - real implementation would extract specific entries
+        bail!("Unreal Engine asset extraction not fully implemented yet. This is a foundation for Phase 2.")
     }
     
     fn provenance(&self) -> &Provenance {

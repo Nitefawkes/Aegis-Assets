@@ -28,6 +28,11 @@ tracing.workspace = true
 
 # Unity-specific dependencies
 lzma-rs = "0.3"      # LZMA compression used in some Unity versions
+base64 = "0.22"      # Base64 encoding for glTF binary data
+
+# Asset conversion dependencies
+image.workspace = true  # Image processing for textures
+gltf-json.workspace = true  # glTF format support
 
 [features]
 default = ["all-versions"]

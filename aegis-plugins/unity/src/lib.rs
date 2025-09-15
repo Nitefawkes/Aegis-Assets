@@ -1,20 +1,33 @@
 use aegis_core::{
     archive::{ArchiveHandler, ComplianceProfile, EntryMetadata, EntryId, Provenance, PluginInfo},
-    resource::{Resource, TextureResource, MeshResource, TextureFormat, TextureUsage},
     PluginFactory,
 };
 use anyhow::{Result, Context, bail};
 use byteorder::{LittleEndian, ReadBytesExt};
 use std::collections::HashMap;
-use std::io::{Cursor, Read, Seek, SeekFrom};
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use tracing::{debug, info, warn};
 
 mod formats;
 mod compression;
+mod converters;
 
-use formats::{UnityVersion, AssetBundle, SerializedFile};
-use compression::{decompress_lz4, decompress_lzma};
+#[cfg(test)]
+mod integration_test;
+
+use formats::{AssetBundle, SerializedFile};
+use compression::decompress_unity_data;
+use converters::convert_unity_asset;
+
+/// Asset information for better categorization and AI tagging
+#[derive(Debug, Clone)]
+struct AssetInfo {
+    name: String,
+    category: String,
+    extension: String,
+    ai_tags: Vec<String>,
+}
 
 /// Unity plugin factory
 pub struct UnityPluginFactory;
@@ -65,41 +78,47 @@ impl UnityArchive {
     /// Detect Unity file format from header bytes
     pub fn detect(bytes: &[u8]) -> bool {
         if bytes.len() < 16 {
+            debug!("File too small for Unity detection: {} bytes", bytes.len());
             return false;
         }
-        
-        // Check for UnityFS signature (Unity 5.3+)
-        if bytes.starts_with(b"UnityFS\0") {
+
+        // Check for UnityFS signature (Unity 5.3+) - includes UnityFS2, UnityFS3, etc.
+        if bytes.starts_with(b"UnityFS") {
+            debug!("Detected UnityFS signature");
             return true;
         }
-        
+
         // Check for UnityRaw signature (older versions)
         if bytes.starts_with(b"UnityRaw") {
+            debug!("Detected UnityRaw signature");
             return true;
         }
-        
+
         // Check for UnityWeb signature (web builds)
         if bytes.starts_with(b"UnityWeb") {
+            debug!("Detected UnityWeb signature");
             return true;
         }
-        
+
         // Check for serialized file format (CAB-* or other Unity signatures)
         if bytes.len() >= 20 {
             let mut cursor = Cursor::new(bytes);
-            
+
             // Try to read metadata table offset
             if let Ok(metadata_size) = cursor.read_u32::<LittleEndian>() {
                 if let Ok(file_size) = cursor.read_u32::<LittleEndian>() {
                     // Basic sanity checks for Unity serialized file
-                    if metadata_size > 0 && 
-                       metadata_size < file_size && 
+                    if metadata_size > 0 &&
+                       metadata_size < file_size &&
                        file_size < bytes.len() as u32 * 2 {
+                        debug!("Detected Unity serialized file format");
                         return true;
                     }
                 }
             }
         }
-        
+
+        debug!("No Unity signature detected");
         false
     }
     
@@ -186,7 +205,7 @@ impl UnityArchive {
     
     /// Parse Unity file format
     fn parse_unity_file(data: &[u8]) -> Result<(Option<AssetBundle>, Option<SerializedFile>)> {
-        if data.starts_with(b"UnityFS\0") {
+        if data.starts_with(b"UnityFS") {
             // UnityFS format (Unity 5.3+)
             debug!("Detected UnityFS format");
             let bundle = AssetBundle::parse(data)?;
@@ -210,13 +229,15 @@ impl UnityArchive {
         
         if let Some(bundle) = bundle {
             for (i, block) in bundle.directory_info.iter().enumerate() {
+                let block_info = Self::categorize_bundle_block(&block.name, i);
+
                 entries.push(EntryMetadata {
                     id: EntryId::new(format!("block_{}", i)),
-                    name: block.name.clone(),
-                    path: PathBuf::from(&block.name),
+                    name: block_info.name,
+                    path: PathBuf::from(format!("{}.{}", block.name, block_info.extension)),
                     size_compressed: Some(block.compressed_size as u64),
                     size_uncompressed: block.size as u64,
-                    file_type: Some("unity_block".to_string()),
+                    file_type: Some(block_info.category),
                     last_modified: None,
                     checksum: None,
                 });
@@ -224,18 +245,16 @@ impl UnityArchive {
         }
         
         if let Some(serialized) = serialized_file {
-            for (i, object) in serialized.objects.iter().enumerate() {
-                let type_name = serialized.type_tree.get(&object.class_id)
-                    .map(|t| t.type_name.clone())
-                    .unwrap_or_else(|| format!("Type_{}", object.class_id));
-                
+            for object in serialized.objects.iter() {
+                let asset_info = Self::get_asset_info(object.class_id, &serialized.type_tree);
+
                 entries.push(EntryMetadata {
                     id: EntryId::new(format!("object_{}", object.path_id)),
-                    name: format!("{}_{}", type_name, object.path_id),
-                    path: PathBuf::from(format!("{}.asset", object.path_id)),
+                    name: asset_info.name,
+                    path: PathBuf::from(format!("{}.{}", object.path_id, asset_info.extension)),
                     size_compressed: None,
                     size_uncompressed: object.size as u64,
-                    file_type: Some(type_name),
+                    file_type: Some(asset_info.category),
                     last_modified: None,
                     checksum: None,
                 });
@@ -243,6 +262,219 @@ impl UnityArchive {
         }
         
         Ok(entries)
+    }
+
+    /// Categorize UnityFS bundle blocks for better organization
+    fn categorize_bundle_block(block_name: &str, index: usize) -> AssetInfo {
+        // Try to infer asset type from block name patterns
+        let name_lower = block_name.to_lowercase();
+
+        if name_lower.contains("texture") || name_lower.contains("tex") {
+            AssetInfo {
+                name: format!("Texture_{}", block_name),
+                category: "texture".to_string(),
+                extension: "png".to_string(),
+                ai_tags: vec!["texture".to_string(), "image".to_string()],
+            }
+        } else if name_lower.contains("mesh") || name_lower.contains("model") {
+            AssetInfo {
+                name: format!("Mesh_{}", block_name),
+                category: "mesh".to_string(),
+                extension: "gltf".to_string(),
+                ai_tags: vec!["mesh".to_string(), "geometry".to_string(), "3d".to_string()],
+            }
+        } else if name_lower.contains("material") || name_lower.contains("mat") {
+            AssetInfo {
+                name: format!("Material_{}", block_name),
+                category: "material".to_string(),
+                extension: "material.json".to_string(),
+                ai_tags: vec!["material".to_string(), "shader".to_string()],
+            }
+        } else if name_lower.contains("audio") || name_lower.contains("sound") {
+            AssetInfo {
+                name: format!("Audio_{}", block_name),
+                category: "audio".to_string(),
+                extension: "ogg".to_string(),
+                ai_tags: vec!["audio".to_string(), "sound".to_string()],
+            }
+        } else if name_lower.contains("anim") {
+            AssetInfo {
+                name: format!("Animation_{}", block_name),
+                category: "animation".to_string(),
+                extension: "animation.json".to_string(),
+                ai_tags: vec!["animation".to_string(), "motion".to_string()],
+            }
+        } else if name_lower.contains("scene") {
+            AssetInfo {
+                name: format!("Scene_{}", block_name),
+                category: "scene".to_string(),
+                extension: "scene".to_string(),
+                ai_tags: vec!["scene".to_string(), "level".to_string()],
+            }
+        } else if name_lower.contains("prefab") {
+            AssetInfo {
+                name: format!("Prefab_{}", block_name),
+                category: "prefab".to_string(),
+                extension: "prefab".to_string(),
+                ai_tags: vec!["prefab".to_string(), "template".to_string()],
+            }
+        } else if name_lower.contains("script") || name_lower.contains("mono") {
+            AssetInfo {
+                name: format!("Script_{}", block_name),
+                category: "script".to_string(),
+                extension: "cs".to_string(),
+                ai_tags: vec!["script".to_string(), "code".to_string()],
+            }
+        } else {
+            // Default categorization
+            AssetInfo {
+                name: format!("Asset_{}", block_name),
+                category: "asset".to_string(),
+                extension: "bin".to_string(),
+                ai_tags: vec!["asset".to_string()],
+            }
+        }
+    }
+
+    /// Get detailed asset information for better categorization and metadata
+    fn get_asset_info(class_id: i32, type_tree: &std::collections::HashMap<i32, formats::TypeInfo>) -> AssetInfo {
+        // Get base type name from type tree
+        let base_name = type_tree.get(&class_id)
+            .map(|t| t.type_name.clone())
+            .unwrap_or_else(|| format!("Type_{}", class_id));
+
+        // Unity class ID mappings for better categorization
+        match class_id {
+            // Textures
+            28 => AssetInfo {
+                name: format!("Texture2D_{}", base_name),
+                category: "texture".to_string(),
+                extension: "png".to_string(),
+                ai_tags: vec!["texture".to_string(), "image".to_string()],
+            },
+            89 => AssetInfo {
+                name: format!("Cubemap_{}", base_name),
+                category: "texture".to_string(),
+                extension: "png".to_string(),
+                ai_tags: vec!["texture".to_string(), "cubemap".to_string()],
+            },
+            117 => AssetInfo {
+                name: format!("Texture2DArray_{}", base_name),
+                category: "texture".to_string(),
+                extension: "png".to_string(),
+                ai_tags: vec!["texture".to_string(), "array".to_string()],
+            },
+
+            // Meshes
+            43 => AssetInfo {
+                name: format!("Mesh_{}", base_name),
+                category: "mesh".to_string(),
+                extension: "gltf".to_string(),
+                ai_tags: vec!["mesh".to_string(), "geometry".to_string(), "3d".to_string()],
+            },
+            156 => AssetInfo {
+                name: format!("Terrain_{}", base_name),
+                category: "mesh".to_string(),
+                extension: "gltf".to_string(),
+                ai_tags: vec!["mesh".to_string(), "terrain".to_string(), "landscape".to_string()],
+            },
+
+            // Materials
+            21 => AssetInfo {
+                name: format!("Material_{}", base_name),
+                category: "material".to_string(),
+                extension: "material.json".to_string(),
+                ai_tags: vec!["material".to_string(), "shader".to_string()],
+            },
+            45 => AssetInfo {
+                name: format!("Shader_{}", base_name),
+                category: "shader".to_string(),
+                extension: "shader".to_string(),
+                ai_tags: vec!["shader".to_string(), "program".to_string()],
+            },
+
+            // Audio
+            83 => AssetInfo {
+                name: format!("AudioClip_{}", base_name),
+                category: "audio".to_string(),
+                extension: "ogg".to_string(),
+                ai_tags: vec!["audio".to_string(), "sound".to_string()],
+            },
+
+            // Animations
+            74 => AssetInfo {
+                name: format!("AnimationClip_{}", base_name),
+                category: "animation".to_string(),
+                extension: "animation.json".to_string(),
+                ai_tags: vec!["animation".to_string(), "motion".to_string()],
+            },
+
+            // Prefabs and Scenes
+            1001 => AssetInfo {
+                name: format!("Prefab_{}", base_name),
+                category: "prefab".to_string(),
+                extension: "prefab".to_string(),
+                ai_tags: vec!["prefab".to_string(), "template".to_string()],
+            },
+            115 => AssetInfo {
+                name: format!("MonoBehaviour_{}", base_name),
+                category: "script".to_string(),
+                extension: "cs".to_string(),
+                ai_tags: vec!["script".to_string(), "component".to_string()],
+            },
+
+            // UI Elements
+            224 => AssetInfo {
+                name: format!("RectTransform_{}", base_name),
+                category: "ui".to_string(),
+                extension: "ui".to_string(),
+                ai_tags: vec!["ui".to_string(), "interface".to_string()],
+            },
+            222 => AssetInfo {
+                name: format!("Canvas_{}", base_name),
+                category: "ui".to_string(),
+                extension: "ui".to_string(),
+                ai_tags: vec!["ui".to_string(), "canvas".to_string()],
+            },
+
+            // Physics
+            54 => AssetInfo {
+                name: format!("Rigidbody_{}", base_name),
+                category: "physics".to_string(),
+                extension: "physics".to_string(),
+                ai_tags: vec!["physics".to_string(), "rigidbody".to_string()],
+            },
+            65 => AssetInfo {
+                name: format!("BoxCollider_{}", base_name),
+                category: "physics".to_string(),
+                extension: "physics".to_string(),
+                ai_tags: vec!["physics".to_string(), "collider".to_string()],
+            },
+
+            // Lighting
+            108 => AssetInfo {
+                name: format!("Light_{}", base_name),
+                category: "lighting".to_string(),
+                extension: "light".to_string(),
+                ai_tags: vec!["lighting".to_string(), "light".to_string()],
+            },
+
+            // Particles
+            198 => AssetInfo {
+                name: format!("ParticleSystem_{}", base_name),
+                category: "particles".to_string(),
+                extension: "particles".to_string(),
+                ai_tags: vec!["particles".to_string(), "effects".to_string()],
+            },
+
+            // Default fallback
+            _ => AssetInfo {
+                name: base_name.clone(),
+                category: "asset".to_string(),
+                extension: "asset".to_string(),
+                ai_tags: vec!["asset".to_string()],
+            },
+        }
     }
 }
 
@@ -254,11 +486,11 @@ impl ArchiveHandler for UnityArchive {
     fn open(path: &Path) -> Result<Self> {
         UnityArchive::open(path)
     }
-    
+
     fn compliance_profile(&self) -> &ComplianceProfile {
         &self.compliance_profile
     }
-    
+
     fn list_entries(&self) -> Result<Vec<EntryMetadata>> {
         Ok(self.entries.clone())
     }
@@ -267,7 +499,7 @@ impl ArchiveHandler for UnityArchive {
         debug!("Reading entry: {}", id.0);
         
         // Find the entry
-        let entry = self.entries.iter()
+        let _entry = self.entries.iter()
             .find(|e| e.id == *id)
             .ok_or_else(|| anyhow::anyhow!("Entry not found: {}", id.0))?;
         
@@ -300,7 +532,7 @@ impl ArchiveHandler for UnityArchive {
         
         bail!("Entry not found or unsupported: {}", id.0)
     }
-    
+
     fn provenance(&self) -> &Provenance {
         &self.provenance
     }
@@ -320,14 +552,8 @@ impl UnityArchive {
         
         let compressed_data = &file_data[start..end];
         
-        match block.compression_type {
-            0 => Ok(compressed_data.to_vec()), // No compression
-            1 => bail!("LZMA compression not yet implemented"),
-            2 => decompress_lz4(compressed_data, block.size as usize), // LZ4
-            3 => bail!("LZ4HC compression not yet implemented"),
-            4 => bail!("LZHAM compression not yet implemented"),
-            _ => bail!("Unknown compression type: {}", block.compression_type),
-        }
+        // Use the unified decompression function
+        decompress_unity_data(compressed_data, block.compression_type, block.size as usize)
     }
     
     /// Extract data from a serialized object
@@ -347,12 +573,48 @@ impl UnityArchive {
         
         Ok(file_data[start..end].to_vec())
     }
+    
+    /// Get converted asset (PNG, glTF, OGG, etc.) - Unity-specific functionality
+    pub fn read_converted_entry(&self, id: &EntryId) -> Result<(String, Vec<u8>)> {
+        debug!("Reading converted entry: {}", id.0);
+        
+        // First get the raw data
+        let raw_data = self.read_entry(id)?;
+        
+        // Try to convert based on Unity object type
+        if let Some(ref serialized) = self.serialized_file {
+            if id.0.starts_with("object_") {
+                let path_id: u64 = id.0.strip_prefix("object_")
+                    .unwrap()
+                    .parse()
+                    .context("Invalid path ID")?;
+                
+                if let Some(object) = serialized.objects.iter().find(|o| o.path_id == path_id) {
+                    // Try to convert the asset
+                    match convert_unity_asset(object.class_id, &raw_data) {
+                        Ok((filename, converted_data)) => {
+                            info!("Successfully converted {} to {}", id.0, filename);
+                            return Ok((filename, converted_data));
+                        }
+                        Err(e) => {
+                            warn!("Failed to convert asset {}: {}. Returning raw data.", id.0, e);
+                            // Fall back to raw data with .bin extension
+                            return Ok((format!("{}.bin", id.0), raw_data));
+                        }
+                    }
+                }
+            }
+        }
+        
+        // For bundle blocks or unsupported types, return raw data
+        Ok((format!("{}.bin", id.0), raw_data))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_unity_detection() {
         // Test UnityFS detection
@@ -367,7 +629,7 @@ mod tests {
         let invalid_header = b"Invalid\0\x00\x00\x00";
         assert!(!UnityArchive::detect(invalid_header));
     }
-    
+
     #[test]
     fn test_plugin_factory() {
         let factory = UnityPluginFactory;

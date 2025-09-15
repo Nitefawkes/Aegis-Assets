@@ -48,9 +48,15 @@
 pub mod archive;
 pub mod resource;
 pub mod export;
+pub mod asset_db;
 pub mod extract;
 pub mod compliance;
 pub mod patch;
+
+#[cfg(feature = "api")]
+pub mod api;
+#[cfg(test)]
+pub mod test_integration;
 
 // Re-export commonly used types
 pub use archive::{
@@ -68,11 +74,14 @@ pub use patch::{PatchRecipe, PatchRecipeBuilder};
 
 use anyhow::Result;
 use std::collections::HashMap;
-use tracing::{info, warn, error};
+use tracing::info;
 
 /// Version information for the core library
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
-pub const GIT_HASH: &str = env!("VERGEN_GIT_SHA");
+pub const GIT_HASH: &str = match option_env!("VERGEN_GIT_SHA") {
+    Some(hash) => hash,
+    None => "unknown",
+};
 
 /// Initialize the Aegis-Core library with logging and telemetry
 pub fn init() -> Result<()> {
@@ -94,6 +103,14 @@ pub fn init() -> Result<()> {
 /// Plugin registry for managing available format handlers
 pub struct PluginRegistry {
     handlers: HashMap<String, Box<dyn PluginFactory>>,
+}
+
+impl Clone for PluginRegistry {
+    fn clone(&self) -> Self {
+        // Note: This is a simplified clone that creates a new empty registry
+        // In a full implementation, we'd need to properly clone the plugin factories
+        Self::new()
+    }
 }
 
 /// Factory trait for creating archive handlers
@@ -123,6 +140,27 @@ impl PluginRegistry {
         Self {
             handlers: HashMap::new(),
         }
+    }
+    
+    /// Load default plugins (Unity, etc.)
+    pub fn load_default_plugins() -> Self {
+        let mut registry = Self::new();
+        
+        // Register Unity plugin
+        #[cfg(feature = "unity-plugin")]
+        {
+            use aegis_unity_plugin::UnityPluginFactory;
+            registry.register_plugin(Box::new(UnityPluginFactory));
+        }
+        
+        // Register Unreal plugin
+        #[cfg(feature = "unreal-plugin")]
+        {
+            use aegis_unreal_plugin::UnrealPluginFactory;
+            registry.register_plugin(Box::new(UnrealPluginFactory));
+        }
+        
+        registry
     }
     
     /// Register a plugin factory
@@ -251,9 +289,9 @@ impl AegisCore {
     
     /// Create an extractor instance
     pub fn create_extractor(&self) -> Extractor {
-        Extractor::with_registries(
-            &self.plugin_registry,
-            &self.compliance_registry,
+        Extractor::with_config(
+            self.plugin_registry.clone(),
+            self.compliance_registry.clone(),
             self.config.clone(),
         )
     }
@@ -264,7 +302,7 @@ impl AegisCore {
             version: VERSION.to_string(),
             git_hash: GIT_HASH.to_string(),
             registered_plugins: self.plugin_registry.handlers.len(),
-            compliance_profiles: self.compliance_registry.profiles.len(),
+            compliance_profiles: self.compliance_registry.profile_count(),
             config: self.config.clone(),
         }
     }

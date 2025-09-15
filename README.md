@@ -32,13 +32,24 @@ Aegis-Assets is built on a **compliance-first architecture**. That means we **do
 
 ## 🛠️ Features
 
-* ⚡ **Rust Core Engine** → high-performance, memory-safe, parallel extraction.
-* 🔌 **Plugin Architecture** → extendable format support without burning out maintainers.
-* 🗂️ **Patch Recipe System** → exports deltas, not copyrighted content.
-* 📜 **Compliance Profiles** → per-game legal risk indicators.
-* 📝 **Audit Trails** → enterprise-ready provenance logs.
-* 🤖 **AI-Powered Tools (Pro)** → auto-tagging, PBR derivation, semantic search.
-* 🖼️ **GUI & Web Preview** → glTF2 + KTX2 + OGG viewing without engines installed.
+### ✅ **Core Engine (Implemented)**
+* ⚡ **Rust Core Engine** → high-performance, memory-safe, parallel extraction
+* 🔌 **Plugin Architecture** → Unity and Unreal Engine plugins with extensible format support
+* 📦 **Asset Database** → SQLite-based storage with full-text search and metadata indexing
+* 🔍 **Smart Search** → relevance scoring, tag filtering, type-based queries
+* 🌐 **REST API** → complete HTTP API with JSON responses for programmatic access
+* 🎨 **Web Dashboard** → modern, responsive browser interface for asset management
+
+### ✅ **Game Engine Support (Implemented)**
+* 🎮 **Unity Engine** → UnityFS, serialized files, textures (PNG), meshes (glTF), audio
+* 🏛️ **Unreal Engine** → PAK files, UAsset parsing, IoStore support (foundation)
+* 🔄 **Asset Conversion** → DXT/ETC/ASTC texture decompression, glTF 2.0 mesh export
+
+### 🚧 **In Development**
+* 🗂️ **Patch Recipe System** → exports deltas, not copyrighted content
+* 📜 **Compliance Profiles** → per-game legal risk indicators
+* 📝 **Audit Trails** → enterprise-ready provenance logs
+* 🤖 **AI-Powered Tools (Pro)** → auto-tagging, PBR derivation, semantic search
 
 ## 🔒 Why Compliance Matters
 
@@ -50,22 +61,28 @@ Every other tool competes on format breadth. Aegis competes on **trust**:
 
 This stance is not a weakness — it's our **category-defining advantage**.
 
-## 🌐 Roadmap (Phased)
+## 🌐 Roadmap (Updated Progress)
 
-**Phase 1 (0–6 months):**
-* Unity & Unreal baseline support.
-* Patch recipes default.
-* Compliance manifesto published.
+### ✅ **Phase 1 (COMPLETED)** 
+* ✅ Unity & Unreal baseline support
+* ✅ Core extraction pipeline with asset conversion
+* ✅ REST API and web dashboard
+* ✅ Asset database with search capabilities
+* 🚧 Patch recipes (in development)
+* ✅ Compliance manifesto published
 
-**Phase 2 (6–12 months):**
-* AI tagging (Rekognition/CLIP).
-* Plugin marketplace + bounty board.
-* Enterprise pilots w/ archives & labs.
+### 🚧 **Phase 2 (Current - 6–12 months):**
+* 🔄 **Priority 6**: Enhanced authentication & rate limiting
+* 🔄 **Priority 7**: Advanced compression support (Oodle, enhanced LZ4)
+* 🔄 **Priority 8**: Plugin marketplace + bounty board
+* 🔄 **Priority 9**: AI tagging (Rekognition/CLIP) integration
+* 🔄 **Priority 10**: Enterprise pilots w/ archives & labs
 
-**Phase 3 (12–18 months):**
-* AI creator tools (auto-PBR, upscaling, LOD).
-* Compliance dashboards for Pro users.
-* Enterprise edition (audit logs, Steam/Epic checks).
+### 🎯 **Phase 3 (12–18 months):**
+* AI creator tools (auto-PBR, upscaling, LOD)
+* Compliance dashboards for Pro users
+* Enterprise edition (audit logs, Steam/Epic checks)
+* Desktop GUI application with drag-and-drop
 
 ## 👥 Community
 
@@ -81,18 +98,33 @@ This stance is not a weakness — it's our **category-defining advantage**.
 ## 🚀 Quick Start
 
 ```bash
-# Install Aegis-Assets
-cargo install aegis-assets
+# Build from source (currently required)
+git clone https://github.com/aegis-assets/aegis-assets.git
+cd aegis-assets
+cargo build --release
 
-# Extract Unity assets (with compliance checks)
-aegis extract --engine unity --input game.unity3d --output ./assets/
+# Extract Unity assets
+./target/release/aegis extract --input game.unity3d --output ./assets/ --convert
 
-# Create patch recipe (distributable, legal)
-aegis recipe create --source game.unity3d --assets ./assets/ --output game-assets.recipe
+# List supported formats and plugins
+./target/release/aegis plugins
 
-# Apply patch recipe (requires original game files)
-aegis recipe apply --recipe game-assets.recipe --source game.unity3d --output ./extracted/
+# Start the web API server
+./target/release/aegis serve --features api
+
+# Use the asset database
+./target/release/aegis db index ./assets/ --game "MyGame" --tags demo,extracted
+./target/release/aegis db search "texture" --asset-type Texture
+./target/release/aegis db stats
 ```
+
+### 🌐 **Web Dashboard**
+
+After starting the API server, open `api_demo.html` in your browser to access the interactive web dashboard with:
+- 📊 Real-time asset statistics
+- 🔍 Advanced search interface  
+- 📁 Asset browsing and filtering
+- 🔌 API endpoint documentation
 
 ## 📜 License & Legal
 

@@ -1,13 +1,13 @@
 use crate::{
-    archive::{ArchiveHandler, ComplianceRegistry},
+    archive::ComplianceRegistry,
+    compliance::{ComplianceChecker, ComplianceResult},
     resource::Resource,
     PluginRegistry, Config,
 };
-use anyhow::{Result, Context};
+use anyhow::Result;
 use std::path::{Path, PathBuf};
-use std::collections::HashMap;
 use thiserror::Error;
-use tracing::{info, warn, error, debug};
+use tracing::{info, error};
 
 /// Errors that can occur during extraction
 #[derive(Debug, Error)]
@@ -32,6 +32,9 @@ pub enum ExtractionError {
     
     #[error("Plugin error: {plugin}: {error}")]
     PluginError { plugin: String, error: String },
+    
+    #[error("Generic error: {0}")]
+    Generic(#[from] anyhow::Error),
 }
 
 /// Result of an extraction operation
@@ -77,39 +80,47 @@ pub struct ExtractionMetrics {
 
 /// Main extraction engine
 pub struct Extractor {
-    plugin_registry: Option<*const PluginRegistry>,
-    compliance_registry: Option<*const ComplianceRegistry>,
+    plugin_registry: PluginRegistry,
+    compliance_checker: ComplianceChecker,
     config: Config,
 }
 
 impl Extractor {
-    /// Create a new extractor with default registries
-    pub fn new(compliance_registry: ComplianceRegistry) -> Self {
+    /// Create a new extractor with registries
+    pub fn new(plugin_registry: PluginRegistry, compliance_registry: ComplianceRegistry) -> Self {
+        let compliance_checker = ComplianceChecker::from_registry(compliance_registry);
         Self {
-            plugin_registry: None,
-            compliance_registry: None, // Will be properly initialized
+            plugin_registry,
+            compliance_checker,
             config: Config::default(),
         }
     }
     
-    /// Create extractor with specific registries
-    pub fn with_registries(
-        plugin_registry: &PluginRegistry,
-        compliance_registry: &ComplianceRegistry,
-        config: Config,
-    ) -> Self {
+    /// Create a new extractor with custom config
+    pub fn with_config(plugin_registry: PluginRegistry, compliance_registry: ComplianceRegistry, config: Config) -> Self {
+        let compliance_checker = ComplianceChecker::from_registry(compliance_registry);
         Self {
-            plugin_registry: Some(plugin_registry as *const _),
-            compliance_registry: Some(compliance_registry as *const _),
+            plugin_registry,
+            compliance_checker,
             config,
         }
+    }
+    
+    /// Get a reference to the plugin registry
+    pub fn plugin_registry(&self) -> &PluginRegistry {
+        &self.plugin_registry
+    }
+    
+    /// Get a reference to the compliance checker
+    pub fn compliance_checker(&self) -> &ComplianceChecker {
+        &self.compliance_checker
     }
     
     /// Extract assets from a file
     pub fn extract_from_file(
         &mut self,
         source_path: &Path,
-        output_dir: &Path,
+        _output_dir: &Path,
     ) -> Result<ExtractionResult, ExtractionError> {
         let start_time = std::time::Instant::now();
         
@@ -127,25 +138,89 @@ impl Extractor {
         let bytes_read = file.read(&mut header)?;
         header.truncate(bytes_read);
         
-        // Find suitable plugin (placeholder - would use actual registry)
+        // Find suitable plugin using registry
         info!("Detecting file format...");
+        let plugin_factory = self.plugin_registry
+            .find_handler(source_path, &header)
+            .ok_or_else(|| ExtractionError::NoSuitablePlugin(source_path.to_path_buf()))?;
         
-        // For now, create a mock result
-        let resources = self.mock_extract_resources(source_path)?;
+        info!("Using plugin: {} v{}", plugin_factory.name(), plugin_factory.version());
+        
+        // Check compliance before extraction
+        let game_id = source_path.file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown");
+        let format = source_path.extension()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown");
+            
+        let compliance_result = self.compliance_checker.check_extraction_allowed(game_id, format);
+        
+        // Handle compliance result
+        let (is_allowed, warnings, recommendations, risk_level) = match &compliance_result {
+            ComplianceResult::Allowed { warnings, recommendations, profile } => {
+                (true, warnings.clone(), recommendations.clone(), profile.enforcement_level)
+            }
+            ComplianceResult::AllowedWithWarnings { warnings, recommendations, profile } => {
+                (true, warnings.clone(), recommendations.clone(), profile.enforcement_level)
+            }
+            ComplianceResult::HighRiskWarning { warnings, profile, .. } => {
+                return Err(ExtractionError::ComplianceViolation(
+                    format!("High-risk extraction requires explicit consent. {}", warnings.join("; "))
+                ));
+            }
+            ComplianceResult::Blocked { reason, .. } => {
+                return Err(ExtractionError::ComplianceViolation(reason.clone()));
+            }
+        };
+        
+        if !warnings.is_empty() {
+            for warning in &warnings {
+                info!("Compliance warning: {}", warning);
+            }
+        }
+        
+        // Create handler and extract resources
+        let handler = plugin_factory.create_handler(source_path)?;
+        let entries = handler.list_entries()?;
+        
+        info!("Found {} entries in archive", entries.len());
+        
+        // Convert entries to resources (simplified)
+        let mut resources = Vec::new();
+        for entry in entries {
+            let resource_type = match entry.file_type.as_deref() {
+                Some("texture") => crate::resource::ResourceType::Texture,
+                Some("mesh") => crate::resource::ResourceType::Mesh,
+                Some("audio") => crate::resource::ResourceType::Audio,
+                _ => crate::resource::ResourceType::Generic,
+            };
+            
+            let resource = crate::resource::Resource {
+                id: entry.id.0.clone(),
+                name: entry.name.clone(),
+                resource_type,
+                size: entry.size_uncompressed,
+                format: entry.file_type.unwrap_or_else(|| "unknown".to_string()),
+                metadata: std::collections::HashMap::new(),
+            };
+            resources.push(resource);
+        }
         
         let duration = start_time.elapsed();
+        let total_bytes: u64 = resources.iter().map(|r| r.size).sum();
         let metrics = ExtractionMetrics {
             duration_ms: duration.as_millis() as u64,
-            peak_memory_mb: 64, // Mock value
-            files_processed: 1,
-            bytes_extracted: 1024 * 1024, // Mock value
+            peak_memory_mb: 64, // TODO: Implement actual memory monitoring
+            files_processed: resources.len(),
+            bytes_extracted: total_bytes,
         };
         
         let compliance_info = ComplianceInfo {
-            is_compliant: true,
-            risk_level: crate::archive::ComplianceLevel::Neutral,
-            warnings: vec!["This is a placeholder implementation".to_string()],
-            recommendations: vec!["Ensure you own the source files".to_string()],
+            is_compliant: is_allowed,
+            risk_level,
+            warnings,
+            recommendations,
         };
         
         info!(
@@ -161,22 +236,6 @@ impl Extractor {
             compliance_info,
             metrics,
         })
-    }
-    
-    /// Mock resource extraction for initial implementation
-    fn mock_extract_resources(&self, source_path: &Path) -> Result<Vec<Resource>> {
-        // This is a placeholder - real implementation would use plugins
-        let texture = Resource::Texture(crate::resource::TextureResource {
-            name: "mock_texture.png".to_string(),
-            width: 256,
-            height: 256,
-            format: crate::resource::TextureFormat::RGBA8,
-            data: vec![255u8; 256 * 256 * 4], // White texture
-            mip_levels: 1,
-            usage_hint: Some(crate::resource::TextureUsage::Albedo),
-        });
-        
-        Ok(vec![texture])
     }
     
     /// Batch extract multiple files
@@ -233,8 +292,9 @@ mod tests {
     
     #[test]
     fn test_extractor_creation() {
+        let plugin_registry = crate::PluginRegistry::new();
         let compliance = ComplianceRegistry::new();
-        let extractor = Extractor::new(compliance);
+        let extractor = Extractor::new(plugin_registry, compliance);
         let stats = extractor.get_stats();
         
         assert_eq!(stats.files_processed, 0);
@@ -242,8 +302,9 @@ mod tests {
     
     #[test]
     fn test_file_not_found() {
+        let plugin_registry = crate::PluginRegistry::new();
         let compliance = ComplianceRegistry::new();
-        let mut extractor = Extractor::new(compliance);
+        let mut extractor = Extractor::new(plugin_registry, compliance);
         let temp_dir = TempDir::new().unwrap();
         
         let result = extractor.extract_from_file(
@@ -256,8 +317,9 @@ mod tests {
     
     #[test]
     fn test_mock_extraction() {
+        let plugin_registry = crate::PluginRegistry::new();
         let compliance = ComplianceRegistry::new();
-        let mut extractor = Extractor::new(compliance);
+        let mut extractor = Extractor::new(plugin_registry, compliance);
         let temp_dir = TempDir::new().unwrap();
         
         // Create a dummy file
@@ -266,10 +328,7 @@ mod tests {
         file.write_all(b"test data").unwrap();
         
         let result = extractor.extract_from_file(&test_file, temp_dir.path());
-        assert!(result.is_ok());
-        
-        let extraction_result = result.unwrap();
-        assert_eq!(extraction_result.resources.len(), 1);
-        assert!(extraction_result.compliance_info.is_compliant);
+        // This will likely fail since we have no plugins registered, but that's expected
+        assert!(result.is_err());
     }
 }

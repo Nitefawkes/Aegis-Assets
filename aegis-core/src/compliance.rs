@@ -1,4 +1,4 @@
-use crate::archive::{ComplianceLevel, ComplianceProfile, FormatSupport};
+use crate::archive::{ComplianceLevel, ComplianceProfile, FormatSupport, ComplianceRegistry};
 use anyhow::{Result, Context};
 use std::collections::HashMap;
 use std::path::Path;
@@ -15,6 +15,14 @@ impl ComplianceChecker {
     pub fn new() -> Self {
         Self {
             profiles: HashMap::new(),
+            strict_mode: false,
+        }
+    }
+    
+    /// Create a compliance checker from a registry
+    pub fn from_registry(registry: ComplianceRegistry) -> Self {
+        Self {
+            profiles: registry.profiles,
             strict_mode: false,
         }
     }
@@ -75,7 +83,7 @@ impl ComplianceChecker {
     }
     
     /// Check if extraction is allowed for a given game/file
-    pub fn check_extraction_allowed(&self, game_id: &str, format: &str) -> ComplianceResult {
+    pub fn check_extraction_allowed(&self, game_id: &str, _format: &str) -> ComplianceResult {
         let profile = self.get_profile_for_game(game_id);
         
         match profile.enforcement_level {
@@ -235,8 +243,8 @@ impl ComplianceChecker {
                 blocked,
                 risk_score,
             },
-            issues,
             recommendations: generate_recommendations(&issues),
+            issues,
             generated_at: chrono::Utc::now(),
         }
     }

@@ -140,8 +140,9 @@ pub trait ArchiveHandler: Send + Sync {
 }
 
 /// Registry for managing compliance profiles
+#[derive(Clone)]
 pub struct ComplianceRegistry {
-    profiles: HashMap<String, ComplianceProfile>,
+    pub profiles: HashMap<String, ComplianceProfile>,
 }
 
 impl ComplianceRegistry {
@@ -176,6 +177,11 @@ impl ComplianceRegistry {
     /// Get compliance profile for a game/publisher
     pub fn get_profile(&self, game_id: &str) -> Option<&ComplianceProfile> {
         self.profiles.get(game_id)
+    }
+
+    /// Get the number of registered compliance profiles
+    pub fn profile_count(&self) -> usize {
+        self.profiles.len()
     }
 
     /// Get default profile for unknown games

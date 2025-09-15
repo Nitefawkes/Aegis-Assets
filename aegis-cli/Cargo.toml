@@ -16,6 +16,10 @@ path = "src/main.rs"
 # Core aegis dependencies
 aegis-core = { path = "../aegis-core" }
 
+# Plugin dependencies
+aegis-unity-plugin = { path = "../aegis-plugins/unity" }
+aegis-unreal-plugin = { path = "../aegis-plugins/unreal" }
+
 # Workspace dependencies
 serde.workspace = true
 serde_json.workspace = true
@@ -23,13 +27,23 @@ serde_yaml.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true
 chrono.workspace = true
+tokio = { workspace = true, features = ["full"] }
 tracing.workspace = true
+
+# Additional CLI dependencies
+walkdir = "2.4"
+blake3.workspace = true
+
 tracing-subscriber.workspace = true
 
 # CLI dependencies
 clap = { version = "4.4", features = ["derive"] }
 indicatif = "0.17"
 console = "0.15"
+
+[features]
+default = []
+api = ["aegis-core/api"]
 
 [dev-dependencies]
 tempfile = "3.8"

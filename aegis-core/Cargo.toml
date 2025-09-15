@@ -29,11 +29,18 @@ flate2.workspace = true
 lz4_flex.workspace = true
 xz2.workspace = true
 tracing.workspace = true
+tracing-subscriber.workspace = true
 
 # Additional core-specific dependencies
 walkdir = "2.4"
 once_cell = "1.19"
 dashmap = "5.5"
+
+# HTTP server dependencies (optional)
+axum = { version = "0.7", optional = true }
+tower = { version = "0.4", optional = true }
+tower-http = { version = "0.5", features = ["cors", "trace"], optional = true }
+hyper = { version = "1.0", optional = true }
 
 [features]
 default = ["all-formats"]
@@ -51,6 +58,9 @@ ai-upscaling = []
 enterprise = ["audit-trails", "compliance-verification"]
 audit-trails = []
 compliance-verification = []
+
+# API features
+api = ["axum", "tower", "tower-http", "hyper"]
 
 [dev-dependencies]
 tempfile = "3.8"

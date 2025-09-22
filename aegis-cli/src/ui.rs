@@ -103,27 +103,60 @@ pub fn print_table(title: &str, items: &[(String, String)]) {
 
 /// Confirmation prompt
 pub fn confirm(message: &str, default: bool) -> bool {
-    use std::io::{self, Write};
-    
+    use std::io;
+
     let prompt = if default {
         format!("{} [Y/n]: ", message)
     } else {
         format!("{} [y/N]: ", message)
     };
-    
-    print!("{}", prompt.bright_yellow());
-    io::stdout().flush().unwrap();
-    
+
+    let stdin = io::stdin();
+    let mut reader = stdin.lock();
+    let mut stdout = io::stdout();
+
+    confirm_with_reader(&mut reader, &mut stdout, &prompt, default, warning)
+}
+
+fn confirm_with_reader<R, W, F>(
+    reader: &mut R,
+    writer: &mut W,
+    prompt: &str,
+    default: bool,
+    mut warn_fn: F,
+) -> bool
+where
+    R: std::io::BufRead,
+    W: std::io::Write,
+    F: FnMut(&str),
+{
+    use std::io::Write as _;
+
     let mut input = String::new();
-    io::stdin().read_line(&mut input).unwrap();
-    
-    match input.trim().to_lowercase().as_str() {
-        "y" | "yes" => true,
-        "n" | "no" => false,
-        "" => default,
-        _ => {
-            warning("Invalid response. Please enter y/n.");
-            confirm(message, default)
+
+    loop {
+        write!(writer, "{}", prompt.bright_yellow()).unwrap();
+        writer.flush().unwrap();
+
+        input.clear();
+
+        match reader.read_line(&mut input) {
+            Ok(0) => return default,
+            Ok(_) => {
+                let trimmed = input.trim();
+
+                if trimmed.is_empty() {
+                    return default;
+                }
+
+                let normalized = trimmed.to_ascii_lowercase();
+                match normalized.as_str() {
+                    "y" | "yes" => return true,
+                    "n" | "no" => return false,
+                    _ => warn_fn("Invalid response. Please enter y/n."),
+                }
+            }
+            Err(err) => panic!("Failed to read input: {}", err),
         }
     }
 }
@@ -199,5 +232,59 @@ mod tests {
         assert_eq!(format_duration(1500), "1.500s");
         assert_eq!(format_duration(65000), "1m 5s");
         assert_eq!(format_duration(125000), "2m 5s");
+    }
+
+    #[test]
+    fn confirm_handles_multiple_invalid_inputs_before_yes() {
+        use std::io::Cursor;
+
+        let input = b"maybe\nwhat\nYes\n";
+        let mut reader = Cursor::new(&input[..]);
+        let mut output = Vec::new();
+        let mut warnings = Vec::new();
+
+        let result = {
+            let warnings_ref = &mut warnings;
+            confirm_with_reader(
+                &mut reader,
+                &mut output,
+                "Proceed? [y/N]: ",
+                false,
+                |msg| warnings_ref.push(msg.to_string()),
+            )
+        };
+
+        assert!(result);
+        assert_eq!(warnings.len(), 2);
+        assert!(warnings
+            .iter()
+            .all(|msg| msg == "Invalid response. Please enter y/n."));
+    }
+
+    #[test]
+    fn confirm_returns_default_after_multiple_invalid_inputs_and_eof() {
+        use std::io::Cursor;
+
+        let input = b"???\nnope";
+        let mut reader = Cursor::new(&input[..]);
+        let mut output = Vec::new();
+        let mut warnings = Vec::new();
+
+        let result = {
+            let warnings_ref = &mut warnings;
+            confirm_with_reader(
+                &mut reader,
+                &mut output,
+                "Proceed? [Y/n]: ",
+                true,
+                |msg| warnings_ref.push(msg.to_string()),
+            )
+        };
+
+        assert!(result);
+        assert_eq!(warnings.len(), 2);
+        assert!(warnings
+            .iter()
+            .all(|msg| msg == "Invalid response. Please enter y/n."));
     }
 }

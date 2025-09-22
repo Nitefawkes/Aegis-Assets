@@ -12,8 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### 🚀 Major Features Added
 
 #### **Asset Database & Search System**
-- Complete SQLite-based asset database with metadata storage
-- Full-text search with relevance scoring and ranking
+- Introduced JSON-backed asset index with metadata storage (SQLite backend pending)
+- Keyword and field filtering over the JSON index
 - Asset type filtering (Texture, Mesh, Audio, Material, Level, etc.)
 - Tag-based organization and categorization
 - Game ID association for multi-project management

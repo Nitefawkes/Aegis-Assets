@@ -25,6 +25,7 @@ nom.workspace = true
 flate2.workspace = true
 lz4_flex.workspace = true
 tracing.workspace = true
+memmap2.workspace = true
 
 # Unity-specific dependencies
 lzma-rs = "0.3"      # LZMA compression used in some Unity versions

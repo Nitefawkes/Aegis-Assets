@@ -105,6 +105,7 @@ dependencies = [
  "image",
  "lz4_flex",
  "lzma-rs",
+ "memmap2",
  "nom",
  "serde",
  "serde_json",

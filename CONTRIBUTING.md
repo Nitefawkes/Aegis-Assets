@@ -42,7 +42,7 @@ For unclear cases, follow this decision tree:
 ### Prerequisites
 
 - **Rust 1.70+**: Latest stable toolchain
-- **Python 3.8+**: For Python bindings development  
+- **Python 3.8+**: Optional (bindings are experimental and currently stubbed)
 - **Git**: Version control
 - **IDE**: VSCode with rust-analyzer recommended
 

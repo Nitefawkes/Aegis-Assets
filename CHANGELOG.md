@@ -105,7 +105,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial implementation of Aegis-Assets compliance-first extraction platform
 - Core Rust library with plugin architecture
 - Unity plugin with basic format detection and extraction
-- Python bindings via PyO3
+- Python bindings via PyO3 (stub module; functionality pending)
 - Command-line interface with extract, recipe, and compliance commands
 - Compliance framework with publisher risk profiles
 - Patch recipe system for legal asset distribution

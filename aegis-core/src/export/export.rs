@@ -1,5 +1,5 @@
 use crate::{archive::Provenance, resource::{Resource, TextureFormat}};
-use anyhow::{Result, Context};
+use anyhow::{Result, Context, bail};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use image::{ImageBuffer, Rgba};
@@ -195,6 +195,64 @@ impl Exporter {
         
         Ok(files)
     }
+
+    fn decode_block_compressed_texture(
+        data: &[u8],
+        width: u32,
+        height: u32,
+        block_size: usize,
+        decoder: fn(&[u8], &mut [u8], usize),
+    ) -> Result<Vec<u8>> {
+        if width == 0 || height == 0 {
+            return Ok(Vec::new());
+        }
+
+        let blocks_x = ((width + 3) / 4) as usize;
+        let blocks_y = ((height + 3) / 4) as usize;
+        let required_len = blocks_x * blocks_y * block_size;
+
+        if data.len() < required_len {
+            bail!(
+                "Compressed texture data is too small: expected at least {} bytes, found {}",
+                required_len,
+                data.len()
+            );
+        }
+
+        let mut rgba = vec![0u8; width as usize * height as usize * 4];
+        let mut block_rgba = [0u8; 4 * 4 * 4];
+        let row_pitch = width as usize * 4;
+
+        for block_y in 0..blocks_y {
+            for block_x in 0..blocks_x {
+                let offset = (block_y * blocks_x + block_x) * block_size;
+                let block = &data[offset..offset + block_size];
+                block_rgba.fill(0);
+                decoder(block, &mut block_rgba, 4 * 4);
+
+                for row in 0..4 {
+                    let dest_y = block_y * 4 + row;
+                    if dest_y >= height as usize {
+                        continue;
+                    }
+
+                    let dest_x = block_x * 4;
+                    if dest_x >= width as usize {
+                        continue;
+                    }
+
+                    let pixels_in_row = std::cmp::min(4, width as usize - dest_x);
+                    let dest_start = dest_y * row_pitch + dest_x * 4;
+                    let src_start = row * 4 * 4;
+                    let src_end = src_start + pixels_in_row * 4;
+                    rgba[dest_start..dest_start + pixels_in_row * 4]
+                        .copy_from_slice(&block_rgba[src_start..src_end]);
+                }
+            }
+        }
+
+        Ok(rgba)
+    }
     
     /// Export texture resource
     pub fn export_texture(
@@ -252,19 +310,52 @@ impl Exporter {
                 ImageBuffer::<Rgba<u8>, _>::from_raw(texture.width, texture.height, rgba8_data)
                     .context("Failed to create RGBA8 image from RGBA16 texture data")?
             },
-            TextureFormat::DXT1 | TextureFormat::DXT3 | TextureFormat::DXT5 |
-            TextureFormat::BC7 | TextureFormat::ETC2 | TextureFormat::ASTC => {
-                // Compressed formats - for now, create a placeholder image
-                // TODO: Implement proper decompression for compressed formats
-                let mut placeholder = ImageBuffer::new(texture.width, texture.height);
-                // Fill with a pattern indicating this is a compressed texture
-                for (x, y, pixel) in placeholder.enumerate_pixels_mut() {
-                    let r = ((x + y) % 32) as u8 * 8;
-                    let g = 100;
-                    let b = 200;
-                    *pixel = Rgba([r, g, b, 255]);
-                }
-                placeholder
+            TextureFormat::DXT1 => {
+                let rgba = Self::decode_block_compressed_texture(
+                    &texture.data,
+                    texture.width,
+                    texture.height,
+                    8,
+                    bcdec_rs::bc1,
+                )?;
+                ImageBuffer::<Rgba<u8>, _>::from_raw(texture.width, texture.height, rgba)
+                    .context("Failed to create RGBA8 image from DXT1 texture data")?
+            }
+            TextureFormat::DXT3 => {
+                let rgba = Self::decode_block_compressed_texture(
+                    &texture.data,
+                    texture.width,
+                    texture.height,
+                    16,
+                    bcdec_rs::bc2,
+                )?;
+                ImageBuffer::<Rgba<u8>, _>::from_raw(texture.width, texture.height, rgba)
+                    .context("Failed to create RGBA8 image from DXT3 texture data")?
+            }
+            TextureFormat::DXT5 => {
+                let rgba = Self::decode_block_compressed_texture(
+                    &texture.data,
+                    texture.width,
+                    texture.height,
+                    16,
+                    bcdec_rs::bc3,
+                )?;
+                ImageBuffer::<Rgba<u8>, _>::from_raw(texture.width, texture.height, rgba)
+                    .context("Failed to create RGBA8 image from DXT5 texture data")?
+            }
+            TextureFormat::BC7 => {
+                let rgba = Self::decode_block_compressed_texture(
+                    &texture.data,
+                    texture.width,
+                    texture.height,
+                    16,
+                    bcdec_rs::bc7,
+                )?;
+                ImageBuffer::<Rgba<u8>, _>::from_raw(texture.width, texture.height, rgba)
+                    .context("Failed to create RGBA8 image from BC7 texture data")?
+            }
+            TextureFormat::ETC2 | TextureFormat::ASTC => {
+                bail!("Decoding {:?} textures is not supported yet", texture.format)
             }
         };
 
@@ -704,7 +795,14 @@ mod tests {
     use super::*;
     use crate::resource::{TextureResource, TextureFormat, TextureUsage};
     use tempfile::TempDir;
-    
+
+    const DXT1_SAMPLE: [u8; 8] = [139, 37, 139, 37, 0, 0, 0, 0];
+    const BC7_SAMPLE: [u8; 16] = [
+        32, 145, 72, 54, 219, 106, 253, 255, 175, 170, 170, 170, 86, 85, 85, 85,
+    ];
+    const DXT_EXPECTED_PIXEL: [u8; 4] = [33, 178, 90, 255];
+    const BC7_EXPECTED_PIXEL: [u8; 4] = [34, 179, 90, 255];
+
     #[test]
     fn test_exporter_creation() {
         let exporter = Exporter::new();
@@ -717,7 +815,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let exporter = Exporter::new();
         
-        let texture = Resource::Texture(TextureResource {
+        let texture = TextureResource {
             name: "test_texture".to_string(),
             width: 64,
             height: 64,
@@ -725,17 +823,75 @@ mod tests {
             data: vec![255u8; 64 * 64 * 4],
             mip_levels: 1,
             usage_hint: Some(TextureUsage::Albedo),
-        });
-        
-        let result = exporter.export_resources(
-            &[texture],
-            temp_dir.path(),
-            None,
-        );
-        
-        assert!(result.is_ok());
-        let export_result = result.unwrap();
-        assert!(!export_result.files.is_empty());
-        assert!(export_result.total_bytes > 0);
+        };
+
+        let files = exporter
+            .export_texture(&texture, temp_dir.path(), None)
+            .expect("export rgba8");
+
+        assert!(!files.is_empty());
+        assert!(files[0].size_bytes > 0);
+
+        let image = image::open(&files[0].path).expect("open png").to_rgba8();
+        assert_eq!(image.dimensions(), (64, 64));
+        for pixel in image.pixels() {
+            assert_eq!(pixel.0, [255, 255, 255, 255]);
+        }
+    }
+
+    #[test]
+    fn test_compressed_dxt1_texture_export() {
+        let temp_dir = TempDir::new().unwrap();
+        let exporter = Exporter::new();
+
+        let texture = TextureResource {
+            name: "compressed_dxt1".to_string(),
+            width: 4,
+            height: 4,
+            format: TextureFormat::DXT1,
+            data: DXT1_SAMPLE.to_vec(),
+            mip_levels: 1,
+            usage_hint: None,
+        };
+
+        let files = exporter
+            .export_texture(&texture, temp_dir.path(), None)
+            .expect("export dxt1");
+
+        assert_eq!(files.len(), 1);
+        let image = image::open(&files[0].path).expect("open png").to_rgba8();
+        assert_eq!(image.dimensions(), (4, 4));
+
+        for pixel in image.pixels() {
+            assert_eq!(pixel.0, DXT_EXPECTED_PIXEL);
+        }
+    }
+
+    #[test]
+    fn test_compressed_bc7_texture_export() {
+        let temp_dir = TempDir::new().unwrap();
+        let exporter = Exporter::new();
+
+        let texture = TextureResource {
+            name: "compressed_bc7".to_string(),
+            width: 4,
+            height: 4,
+            format: TextureFormat::BC7,
+            data: BC7_SAMPLE.to_vec(),
+            mip_levels: 1,
+            usage_hint: None,
+        };
+
+        let files = exporter
+            .export_texture(&texture, temp_dir.path(), None)
+            .expect("export bc7");
+
+        assert_eq!(files.len(), 1);
+        let image = image::open(&files[0].path).expect("open png").to_rgba8();
+        assert_eq!(image.dimensions(), (4, 4));
+
+        for pixel in image.pixels() {
+            assert_eq!(pixel.0, BC7_EXPECTED_PIXEL);
+        }
     }
 }

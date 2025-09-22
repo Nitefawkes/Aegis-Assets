@@ -30,6 +30,7 @@ lz4_flex.workspace = true
 xz2.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+bcdec_rs.workspace = true
 
 # Additional core-specific dependencies
 walkdir = "2.4"

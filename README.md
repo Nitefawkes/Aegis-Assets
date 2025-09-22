@@ -118,6 +118,10 @@ cargo build --release
 ./target/release/aegis db stats
 ```
 
+### ⚠️ Python bindings status
+
+The `aegis-python` crate currently provides a stub PyO3 module. Functional bindings for configuring and running extractions from Python are still in development, so all workflows should use the Rust CLI or core library for the time being.
+
 ### 🌐 **Web Dashboard**
 
 After starting the API server, open `api_demo.html` in your browser to access the interactive web dashboard with:

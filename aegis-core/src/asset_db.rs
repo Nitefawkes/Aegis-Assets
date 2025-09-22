@@ -39,6 +39,7 @@ use crate::resource::ResourceType;
 use crate::archive::Provenance;
 use crate::export::ExportFormat;
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::fs;
@@ -148,6 +149,12 @@ pub struct SearchResult {
     pub asset: AssetMetadata,
     pub relevance_score: f32,
     pub matched_fields: Vec<String>,
+}
+
+fn relevance_cmp(a: &SearchResult, b: &SearchResult) -> Ordering {
+    b.relevance_score
+        .partial_cmp(&a.relevance_score)
+        .unwrap_or(Ordering::Equal)
 }
 
 /// Asset database for indexing and searching
@@ -318,7 +325,7 @@ impl AssetDatabase {
             SortOrder::CreatedDesc => results.sort_by(|a, b| b.asset.created_at.cmp(&a.asset.created_at)),
             SortOrder::SizeAsc => results.sort_by(|a, b| a.asset.file_size.cmp(&b.asset.file_size)),
             SortOrder::SizeDesc => results.sort_by(|a, b| b.asset.file_size.cmp(&a.asset.file_size)),
-            SortOrder::Relevance => results.sort_by(|a, b| b.relevance_score.partial_cmp(&a.relevance_score).unwrap()),
+            SortOrder::Relevance => results.sort_by(relevance_cmp),
         }
 
         // Apply limit
@@ -610,5 +617,55 @@ impl AssetMetadata {
     pub fn with_keywords(mut self, keywords: Vec<String>) -> Self {
         self.search_keywords = keywords;
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn sample_asset(id: &str) -> AssetMetadata {
+        AssetMetadata::new(
+            id.to_string(),
+            format!("Asset {id}"),
+            AssetType::Mesh,
+            PathBuf::from(format!("{id}.source")),
+            PathBuf::from(format!("{id}.output")),
+            1024,
+            format!("hash_{id}"),
+        )
+    }
+
+    #[test]
+    fn relevance_sort_handles_nan_scores() {
+        let mut results = vec![
+            SearchResult {
+                asset: sample_asset("nan"),
+                relevance_score: f32::NAN,
+                matched_fields: Vec::new(),
+            },
+            SearchResult {
+                asset: sample_asset("high"),
+                relevance_score: 0.9,
+                matched_fields: Vec::new(),
+            },
+            SearchResult {
+                asset: sample_asset("low"),
+                relevance_score: 0.5,
+                matched_fields: Vec::new(),
+            },
+        ];
+
+        results.sort_by(super::relevance_cmp);
+
+        let finite_scores: Vec<f32> = results
+            .iter()
+            .filter(|result| result.relevance_score.is_finite())
+            .map(|result| result.relevance_score)
+            .collect();
+
+        assert_eq!(finite_scores, vec![0.9, 0.5]);
+        assert!(results.iter().any(|result| result.relevance_score.is_nan()));
     }
 }

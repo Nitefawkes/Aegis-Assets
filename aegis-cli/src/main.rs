@@ -9,6 +9,8 @@ use std::path::{Path, PathBuf};
 use tracing::{info, error, warn};
 use walkdir;
 
+mod ui;
+
 #[derive(Parser)]
 #[command(name = "aegis")]
 #[command(about = "Compliance-first game asset extraction tool")]

@@ -1,5 +1,5 @@
 use colored::*;
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::ProgressBar;
 
 /// Create a progress bar with the specified length
 pub fn progress_bar(len: u64) -> ProgressBar {
@@ -130,25 +130,52 @@ pub fn confirm(message: &str, default: bool) -> bool {
 
 /// Multiple choice selection
 pub fn select(message: &str, choices: &[String]) -> Option<usize> {
-    use std::io::{self, Write};
-    
-    println!("{}", message.bright_blue().bold());
-    
+    use std::io;
+
+    let mut stdout = io::stdout();
+    let mut stdin = io::stdin().lock();
+
+    select_with_io(message, choices, &mut stdin, &mut stdout)
+}
+
+fn select_with_io<R, W>(
+    message: &str,
+    choices: &[String],
+    reader: &mut R,
+    writer: &mut W,
+) -> Option<usize>
+where
+    R: std::io::BufRead,
+    W: std::io::Write,
+{
+    writeln!(writer, "{}", message.bright_blue().bold()).unwrap();
+
     for (i, choice) in choices.iter().enumerate() {
-        println!("  {}: {}", i + 1, choice);
+        writeln!(writer, "  {}: {}", i + 1, choice).unwrap();
     }
-    
-    print!("\nSelect option (1-{}): ", choices.len());
-    io::stdout().flush().unwrap();
-    
+
     let mut input = String::new();
-    io::stdin().read_line(&mut input).unwrap();
-    
-    match input.trim().parse::<usize>() {
-        Ok(n) if n > 0 && n <= choices.len() => Some(n - 1),
-        _ => {
-            warning("Invalid selection.");
-            None
+
+    loop {
+        write!(writer, "\nSelect option (1-{}): ", choices.len()).unwrap();
+        writer.flush().unwrap();
+        input.clear();
+
+        match reader.read_line(&mut input) {
+            Ok(0) => return None,
+            Ok(_) => {
+                let trimmed = input.trim();
+
+                if trimmed.is_empty() {
+                    return None;
+                }
+
+                match trimmed.parse::<usize>() {
+                    Ok(n) if n > 0 && n <= choices.len() => return Some(n - 1),
+                    _ => warning("Invalid selection."),
+                }
+            }
+            Err(err) => panic!("Failed to read input: {}", err),
         }
     }
 }
@@ -199,5 +226,36 @@ mod tests {
         assert_eq!(format_duration(1500), "1.500s");
         assert_eq!(format_duration(65000), "1m 5s");
         assert_eq!(format_duration(125000), "2m 5s");
+    }
+
+    #[test]
+    fn test_select_reprompts_until_valid_input() {
+        use std::io::Cursor;
+
+        let choices = vec![
+            "First".to_string(),
+            "Second".to_string(),
+            "Third".to_string(),
+        ];
+        let mut input = Cursor::new(b"0\n4\n2\n".to_vec());
+        let mut output = Vec::new();
+
+        let selection =
+            super::select_with_io("Choose an option", &choices, &mut input, &mut output);
+
+        assert_eq!(selection, Some(1));
+    }
+
+    #[test]
+    fn test_select_returns_none_on_empty_input() {
+        use std::io::Cursor;
+
+        let choices = vec!["Only".to_string()];
+        let mut input = Cursor::new(b"\n".to_vec());
+        let mut output = Vec::new();
+
+        let selection = super::select_with_io("Choose", &choices, &mut input, &mut output);
+
+        assert_eq!(selection, None);
     }
 }

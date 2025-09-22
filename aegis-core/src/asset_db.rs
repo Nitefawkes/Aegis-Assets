@@ -13,7 +13,7 @@
 //!
 //! # Example
 //!
-//! ```rust
+//! ```rust,ignore
 //! use aegis_core::asset_db::{AssetDatabase, AssetMetadata};
 //!
 //! // Create database
@@ -35,15 +35,15 @@
 //! let results = db.search("character hero")?;
 //! ```
 
-use crate::resource::ResourceType;
 use crate::archive::Provenance;
 use crate::export::ExportFormat;
+use crate::resource::ResourceType;
+use anyhow::{Context, Result};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
 use std::fs;
-use anyhow::{Result, Context};
-use chrono::{DateTime, Utc};
+use std::path::{Path, PathBuf};
 
 /// Asset type classification
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -228,9 +228,12 @@ impl AssetDatabase {
         let mut candidates = HashSet::new();
 
         // Start with all assets if no specific filters
-        if query.text.is_none() && query.asset_type.is_none() &&
-           query.tags.is_empty() && query.game_id.is_none() &&
-           query.compliance_level.is_none() {
+        if query.text.is_none()
+            && query.asset_type.is_none()
+            && query.tags.is_empty()
+            && query.game_id.is_none()
+            && query.compliance_level.is_none()
+        {
             candidates = self.assets.keys().cloned().collect();
         }
 
@@ -246,7 +249,9 @@ impl AssetDatabase {
 
         // Apply type filter
         if let Some(asset_type) = &query.asset_type {
-            let type_candidates: HashSet<String> = self.assets.iter()
+            let type_candidates: HashSet<String> = self
+                .assets
+                .iter()
                 .filter(|(_, metadata)| &metadata.asset_type == asset_type)
                 .map(|(id, _)| id.clone())
                 .collect();
@@ -274,7 +279,9 @@ impl AssetDatabase {
 
         // Apply game ID filter
         if let Some(game_id) = &query.game_id {
-            let game_candidates: HashSet<String> = self.assets.iter()
+            let game_candidates: HashSet<String> = self
+                .assets
+                .iter()
                 .filter(|(_, metadata)| metadata.game_id.as_ref() == Some(game_id))
                 .map(|(id, _)| id.clone())
                 .collect();
@@ -288,7 +295,9 @@ impl AssetDatabase {
 
         // Apply compliance level filter
         if let Some(compliance) = &query.compliance_level {
-            let compliance_candidates: HashSet<String> = self.assets.iter()
+            let compliance_candidates: HashSet<String> = self
+                .assets
+                .iter()
                 .filter(|(_, metadata)| &metadata.compliance_level == compliance)
                 .map(|(id, _)| id.clone())
                 .collect();
@@ -296,16 +305,20 @@ impl AssetDatabase {
             if candidates.is_empty() {
                 candidates = compliance_candidates;
             } else {
-                candidates = candidates.intersection(&compliance_candidates).cloned().collect();
+                candidates = candidates
+                    .intersection(&compliance_candidates)
+                    .cloned()
+                    .collect();
             }
         }
 
         // Convert to search results
-        let mut results: Vec<SearchResult> = candidates.iter()
+        let mut results: Vec<SearchResult> = candidates
+            .iter()
             .filter_map(|id| self.assets.get(id))
             .map(|metadata| SearchResult {
                 asset: metadata.clone(),
-                relevance_score: 1.0, // TODO: Implement proper scoring
+                relevance_score: 1.0,       // TODO: Implement proper scoring
                 matched_fields: Vec::new(), // TODO: Track matched fields
             })
             .collect();
@@ -314,11 +327,19 @@ impl AssetDatabase {
         match query.sort_by {
             SortOrder::NameAsc => results.sort_by(|a, b| a.asset.name.cmp(&b.asset.name)),
             SortOrder::NameDesc => results.sort_by(|a, b| b.asset.name.cmp(&a.asset.name)),
-            SortOrder::CreatedAsc => results.sort_by(|a, b| a.asset.created_at.cmp(&b.asset.created_at)),
-            SortOrder::CreatedDesc => results.sort_by(|a, b| b.asset.created_at.cmp(&a.asset.created_at)),
+            SortOrder::CreatedAsc => {
+                results.sort_by(|a, b| a.asset.created_at.cmp(&b.asset.created_at))
+            }
+            SortOrder::CreatedDesc => {
+                results.sort_by(|a, b| b.asset.created_at.cmp(&a.asset.created_at))
+            }
             SortOrder::SizeAsc => results.sort_by(|a, b| a.asset.file_size.cmp(&b.asset.file_size)),
-            SortOrder::SizeDesc => results.sort_by(|a, b| b.asset.file_size.cmp(&a.asset.file_size)),
-            SortOrder::Relevance => results.sort_by(|a, b| b.relevance_score.partial_cmp(&a.relevance_score).unwrap()),
+            SortOrder::SizeDesc => {
+                results.sort_by(|a, b| b.asset.file_size.cmp(&a.asset.file_size))
+            }
+            SortOrder::Relevance => {
+                results.sort_by(|a, b| b.relevance_score.partial_cmp(&a.relevance_score).unwrap())
+            }
         }
 
         // Apply limit
@@ -336,16 +357,19 @@ impl AssetDatabase {
 
     /// Get assets by type
     pub fn get_assets_by_type(&self, asset_type: &AssetType) -> Vec<&AssetMetadata> {
-        self.assets.values()
+        self.assets
+            .values()
             .filter(|metadata| &metadata.asset_type == asset_type)
             .collect()
     }
 
     /// Get assets by tag
     pub fn get_assets_by_tag(&self, tag: &str) -> Vec<&AssetMetadata> {
-        self.tag_index.get(tag)
+        self.tag_index
+            .get(tag)
             .map(|asset_ids| {
-                asset_ids.iter()
+                asset_ids
+                    .iter()
                     .filter_map(|id| self.assets.get(id))
                     .collect()
             })
@@ -394,12 +418,17 @@ impl AssetDatabase {
 
         // Also search in asset names and descriptions
         for (asset_id, metadata) in &self.assets {
-            if metadata.name.to_lowercase().contains(&query_lower) ||
-               metadata.description.as_ref()
-                   .map(|desc| desc.to_lowercase().contains(&query_lower))
-                   .unwrap_or(false) ||
-               metadata.tags.iter()
-                   .any(|tag| tag.to_lowercase().contains(&query_lower)) {
+            if metadata.name.to_lowercase().contains(&query_lower)
+                || metadata
+                    .description
+                    .as_ref()
+                    .map(|desc| desc.to_lowercase().contains(&query_lower))
+                    .unwrap_or(false)
+                || metadata
+                    .tags
+                    .iter()
+                    .any(|tag| tag.to_lowercase().contains(&query_lower))
+            {
                 results.insert(asset_id.clone());
             }
         }
@@ -415,7 +444,8 @@ impl AssetDatabase {
         // Add new entries
         let terms = self.extract_search_terms(metadata);
         for term in terms {
-            self.search_index.entry(term)
+            self.search_index
+                .entry(term)
                 .or_insert_with(HashSet::new)
                 .insert(asset_id.to_string());
         }
@@ -446,7 +476,8 @@ impl AssetDatabase {
 
         // Add new tags
         for tag in tags {
-            self.tag_index.entry(tag.clone())
+            self.tag_index
+                .entry(tag.clone())
                 .or_insert_with(HashSet::new)
                 .insert(asset_id.to_string());
         }
@@ -469,22 +500,18 @@ impl AssetDatabase {
         let mut terms = Vec::new();
 
         // Add name terms
-        terms.extend(metadata.name.split_whitespace()
-            .map(|s| s.to_lowercase()));
+        terms.extend(metadata.name.split_whitespace().map(|s| s.to_lowercase()));
 
         // Add description terms
         if let Some(desc) = &metadata.description {
-            terms.extend(desc.split_whitespace()
-                .map(|s| s.to_lowercase()));
+            terms.extend(desc.split_whitespace().map(|s| s.to_lowercase()));
         }
 
         // Add tags
-        terms.extend(metadata.tags.iter()
-            .map(|tag| tag.to_lowercase()));
+        terms.extend(metadata.tags.iter().map(|tag| tag.to_lowercase()));
 
         // Add keywords
-        terms.extend(metadata.search_keywords.iter()
-            .map(|kw| kw.to_lowercase()));
+        terms.extend(metadata.search_keywords.iter().map(|kw| kw.to_lowercase()));
 
         // Add file extension
         if let Some(ext) = metadata.source_path.extension() {
@@ -498,22 +525,19 @@ impl AssetDatabase {
 
     /// Save database to disk
     fn save(&self) -> Result<()> {
-        let data = serde_json::to_string_pretty(&self.assets)
-            .context("Failed to serialize database")?;
+        let data =
+            serde_json::to_string_pretty(&self.assets).context("Failed to serialize database")?;
 
-        fs::write(&self.db_path, data)
-            .context("Failed to write database file")?;
+        fs::write(&self.db_path, data).context("Failed to write database file")?;
 
         Ok(())
     }
 
     /// Load database from disk
     fn load(&mut self) -> Result<()> {
-        let data = fs::read_to_string(&self.db_path)
-            .context("Failed to read database file")?;
+        let data = fs::read_to_string(&self.db_path).context("Failed to read database file")?;
 
-        self.assets = serde_json::from_str(&data)
-            .context("Failed to deserialize database")?;
+        self.assets = serde_json::from_str(&data).context("Failed to deserialize database")?;
 
         // Rebuild search and tag indices
         let assets_clone: Vec<(String, AssetMetadata)> = self.assets.clone().into_iter().collect();

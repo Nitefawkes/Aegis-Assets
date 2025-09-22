@@ -1,5 +1,5 @@
 use aegis_core::{
-    archive::{ArchiveHandler, ComplianceProfile, EntryMetadata, EntryId, Provenance, PluginInfo},
+    archive::{ArchiveHandler, ComplianceProfile, ConvertedEntry, EntryMetadata, EntryId, PluginInfo, Provenance},
     PluginFactory,
 };
 use anyhow::{Result, Context, bail};
@@ -497,12 +497,12 @@ impl ArchiveHandler for UnityArchive {
     
     fn read_entry(&self, id: &EntryId) -> Result<Vec<u8>> {
         debug!("Reading entry: {}", id.0);
-        
+
         // Find the entry
         let _entry = self.entries.iter()
             .find(|e| e.id == *id)
             .ok_or_else(|| anyhow::anyhow!("Entry not found: {}", id.0))?;
-        
+
         // Extract data based on entry type
         if let Some(ref bundle) = self.bundle {
             if id.0.starts_with("block_") {
@@ -510,27 +510,40 @@ impl ArchiveHandler for UnityArchive {
                     .unwrap()
                     .parse()
                     .context("Invalid block index")?;
-                
+
                 if block_index < bundle.directory_info.len() {
                     return self.extract_bundle_block(&bundle.directory_info[block_index]);
                 }
             }
         }
-        
+
         if let Some(ref serialized) = self.serialized_file {
             if id.0.starts_with("object_") {
                 let path_id: u64 = id.0.strip_prefix("object_")
                     .unwrap()
                     .parse()
                     .context("Invalid path ID")?;
-                
+
                 if let Some(object) = serialized.objects.iter().find(|o| o.path_id == path_id) {
                     return self.extract_serialized_object(object, serialized);
                 }
             }
         }
-        
+
         bail!("Entry not found or unsupported: {}", id.0)
+    }
+
+    fn read_converted_entry(&self, id: &EntryId) -> Result<Option<ConvertedEntry>> {
+        match UnityArchive::read_converted_entry(self, id) {
+            Ok((filename, data)) => {
+                let converted = !filename.ends_with(".bin");
+                Ok(Some(ConvertedEntry { filename, data, converted }))
+            }
+            Err(e) => {
+                warn!("Failed to get converted entry {}: {}", id.0, e);
+                Ok(None)
+            }
+        }
     }
 
     fn provenance(&self) -> &Provenance {

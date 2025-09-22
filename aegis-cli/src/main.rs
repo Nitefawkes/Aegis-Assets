@@ -1,12 +1,12 @@
-use clap::{Parser, Subcommand};
-use anyhow::{Result, Context};
 use aegis_core::{
     archive::ComplianceRegistry,
-    extract::{Extractor, ExtractionError},
-    PluginRegistry, init,
+    extract::{ExtractionError, Extractor},
+    init, PluginRegistry,
 };
+use anyhow::{Context, Result};
+use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
-use tracing::{info, error, warn};
+use tracing::{error, info, warn};
 use walkdir;
 
 #[derive(Parser)]
@@ -25,39 +25,39 @@ enum Commands {
         /// Input file or directory path
         #[arg(value_name = "INPUT")]
         input: PathBuf,
-        
+
         /// Output directory for extracted assets
         #[arg(short, long, value_name = "OUTPUT")]
         output: Option<PathBuf>,
-        
+
         /// Specific plugin to use (optional, auto-detected if not specified)
         #[arg(short, long, value_name = "PLUGIN")]
         plugin: Option<String>,
-        
+
         /// Convert assets to standard formats (PNG, glTF, OGG)
         #[arg(long)]
         convert: bool,
-        
+
         /// Skip compliance checks (not recommended)
         #[arg(long)]
         skip_compliance: bool,
-        
+
         /// Verbose output
         #[arg(short, long)]
         verbose: bool,
     },
-    
+
     /// Check compliance with publisher policies
     Compliance {
         /// Input file or directory to check
         #[arg(value_name = "INPUT")]
         input: PathBuf,
-        
+
         /// Publisher profile to check against
         #[arg(short, long, value_name = "PROFILE")]
         profile: Option<String>,
     },
-    
+
     /// List available plugins and supported formats
     Plugins,
 
@@ -161,50 +161,53 @@ enum DbCommands {
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
-    
+
     // Initialize Aegis-Core
     init().context("Failed to initialize Aegis-Core")?;
-    
+
     // Load plugins and compliance profiles
     let plugin_registry = load_plugins()?;
     let compliance_registry = load_compliance_profiles()?;
-    
+
     match &cli.command {
-        Commands::Extract { 
-            input, 
-            output, 
-            plugin, 
-            convert, 
+        Commands::Extract {
+            input,
+            output,
+            plugin,
+            convert,
             skip_compliance,
-            verbose 
+            verbose,
         } => {
             handle_extract(
-                input, 
-                output.as_ref().map(|p| p.as_path()), 
+                input,
+                output.as_ref().map(|p| p.as_path()),
                 plugin.as_ref(),
                 *convert,
                 *skip_compliance,
                 *verbose,
                 plugin_registry,
-                compliance_registry
+                compliance_registry,
             )?;
         }
-        
+
         Commands::Compliance { input, profile } => {
             handle_compliance_check(input, profile.as_ref(), compliance_registry)?;
         }
-        
+
         Commands::List { input, details } => {
             handle_list_assets(input, *details, plugin_registry)?;
         }
-        
+
         Commands::Plugins => {
             handle_list_plugins(plugin_registry)?;
         }
-        
+
         Commands::Version => {
             println!("🛡️  Aegis-Assets v{}", env!("CARGO_PKG_VERSION"));
-            println!("Build: {}", option_env!("VERGEN_GIT_SHA_SHORT").unwrap_or("unknown"));
+            println!(
+                "Build: {}",
+                option_env!("VERGEN_GIT_SHA_SHORT").unwrap_or("unknown")
+            );
             println!("Core: {}", aegis_core::VERSION);
         }
 
@@ -213,11 +216,15 @@ async fn main() -> Result<()> {
         }
 
         #[cfg(feature = "api")]
-        Commands::Serve { address, database, cors } => {
+        Commands::Serve {
+            address,
+            database,
+            cors,
+        } => {
             handle_serve_command(address, database, *cors).await?;
         }
     }
-    
+
     Ok(())
 }
 
@@ -225,7 +232,7 @@ async fn main() -> Result<()> {
 fn load_plugins() -> Result<PluginRegistry> {
     info!("Loading plugins...");
     let mut registry = PluginRegistry::new();
-    
+
     // For now, manually register Unity plugin
     // In a full implementation, this would scan plugin directories
     #[cfg(feature = "unity-plugin")]
@@ -233,7 +240,7 @@ fn load_plugins() -> Result<PluginRegistry> {
         use aegis_unity_plugin::UnityPluginFactory;
         registry.register_plugin(Box::new(UnityPluginFactory));
     }
-    
+
     // Try to load Unity plugin directly (since we know it's there)
     match load_unity_plugin() {
         Ok(factory) => {
@@ -255,14 +262,14 @@ fn load_plugins() -> Result<PluginRegistry> {
             warn!("Failed to load Unreal plugin: {}", e);
         }
     }
-    
+
     let plugin_count = registry.list_plugins().len();
     info!("Loaded {} plugins", plugin_count);
-    
+
     if plugin_count == 0 {
         warn!("No plugins loaded! Asset extraction will not work.");
     }
-    
+
     Ok(registry)
 }
 
@@ -280,7 +287,7 @@ fn load_unreal_plugin() -> Result<Box<dyn aegis_core::PluginFactory>> {
 /// Load compliance profiles
 fn load_compliance_profiles() -> Result<ComplianceRegistry> {
     info!("Loading compliance profiles...");
-    
+
     let compliance_dir = Path::new("compliance-profiles");
     if compliance_dir.exists() {
         ComplianceRegistry::load_from_directory(compliance_dir)
@@ -303,57 +310,71 @@ fn handle_extract(
     compliance_registry: ComplianceRegistry,
 ) -> Result<()> {
     info!("Starting asset extraction from: {}", input.display());
-    
+
     // Determine output directory
     let output_dir = output.unwrap_or_else(|| Path::new("./extracted"));
-    std::fs::create_dir_all(output_dir)
-        .with_context(|| format!("Failed to create output directory: {}", output_dir.display()))?;
-    
+    std::fs::create_dir_all(output_dir).with_context(|| {
+        format!(
+            "Failed to create output directory: {}",
+            output_dir.display()
+        )
+    })?;
+
     // Create extractor
     let mut extractor = Extractor::new(plugin_registry, compliance_registry);
-    
+
     // Override compliance if requested (and warn)
     if skip_compliance {
         warn!("⚠️  Compliance checks disabled - use at your own risk!");
     }
-    
+
     // Check if input file exists
     if !input.exists() {
         error!("Input file not found: {}", input.display());
         return Err(anyhow::anyhow!("File not found: {}", input.display()));
     }
-    
+
     // Perform extraction
     match extractor.extract_from_file(input, output_dir) {
         Ok(result) => {
             println!("✅ Extraction successful!");
             println!("📁 Source: {}", result.source_path.display());
+            println!("📂 Output: {}", result.output_dir.display());
             println!("📊 Resources found: {}", result.resources.len());
             println!("⏱️  Duration: {}ms", result.metrics.duration_ms);
             println!("💾 Peak memory: {}MB", result.metrics.peak_memory_mb);
             println!("📈 Total bytes: {}", result.metrics.bytes_extracted);
-            
+
             if !result.compliance_info.warnings.is_empty() {
                 println!("\n⚠️  Compliance warnings:");
                 for warning in &result.compliance_info.warnings {
                     println!("   • {}", warning);
                 }
             }
-            
+
             if !result.compliance_info.recommendations.is_empty() {
                 println!("\n💡 Recommendations:");
                 for rec in &result.compliance_info.recommendations {
                     println!("   • {}", rec);
                 }
             }
-            
+
             if verbose {
                 println!("\n📋 Extracted resources:");
                 for resource in &result.resources {
-                    println!("   • {} ({}, {} bytes)", resource.name, resource.format, resource.size);
+                    println!(
+                        "   • {} ({}, {} bytes)",
+                        resource.name, resource.format, resource.size
+                    );
+                    if let Some(raw_path) = resource.raw_output_path() {
+                        println!("     ↳ raw: {}", raw_path.display());
+                    }
+                    for converted in resource.converted_output_paths() {
+                        println!("     ↳ converted: {}", converted.display());
+                    }
                 }
             }
-            
+
             if convert {
                 println!("\n🔄 Converting assets to standard formats...");
                 match convert_extracted_assets(&result, &output_dir) {
@@ -361,9 +382,13 @@ fn handle_extract(
                         println!("✅ Conversion completed!");
                         println!("📁 Converted {} files:", converted_files.len());
                         for file in &converted_files {
-                            println!("   • {} ({})", file.path.display(), format_bytes(file.size_bytes));
+                            println!(
+                                "   • {} ({})",
+                                file.path.display(),
+                                format_bytes(file.size_bytes)
+                            );
                         }
-                    },
+                    }
                     Err(e) => {
                         println!("⚠️  Conversion failed: {}", e);
                         println!("   Continuing with raw extracted assets...");
@@ -389,7 +414,7 @@ fn handle_extract(
             return Err(anyhow::anyhow!("Extraction failed: {}", e));
         }
     }
-    
+
     Ok(())
 }
 
@@ -400,83 +425,104 @@ fn handle_compliance_check(
     compliance_registry: ComplianceRegistry,
 ) -> Result<()> {
     info!("Checking compliance for: {}", input.display());
-    
-    let game_id = input.file_stem()
+
+    let game_id = input
+        .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("unknown");
-    let format = input.extension()
+    let format = input
+        .extension()
         .and_then(|s| s.to_str())
         .unwrap_or("unknown");
-    
+
     let checker = aegis_core::compliance::ComplianceChecker::from_registry(compliance_registry);
     let result = checker.check_extraction_allowed(game_id, format);
-    
+
     match result {
         aegis_core::compliance::ComplianceResult::Allowed { profile, .. } => {
             println!("✅ Extraction allowed");
             println!("📋 Publisher: {}", profile.publisher);
             println!("🎯 Risk level: {:?}", profile.enforcement_level);
         }
-        aegis_core::compliance::ComplianceResult::AllowedWithWarnings { warnings, profile, .. } => {
+        aegis_core::compliance::ComplianceResult::AllowedWithWarnings {
+            warnings, profile, ..
+        } => {
             println!("⚠️  Extraction allowed with warnings");
             println!("📋 Publisher: {}", profile.publisher);
             for warning in warnings {
                 println!("   • {}", warning);
             }
         }
-        aegis_core::compliance::ComplianceResult::HighRiskWarning { warnings, profile, .. } => {
+        aegis_core::compliance::ComplianceResult::HighRiskWarning {
+            warnings, profile, ..
+        } => {
             println!("🚨 High-risk extraction");
             println!("📋 Publisher: {}", profile.publisher);
             for warning in warnings {
                 println!("   • {}", warning);
             }
         }
-        aegis_core::compliance::ComplianceResult::Blocked { reason, profile, .. } => {
+        aegis_core::compliance::ComplianceResult::Blocked {
+            reason, profile, ..
+        } => {
             println!("❌ Extraction blocked");
             println!("📋 Publisher: {}", profile.publisher);
             println!("🚫 Reason: {}", reason);
         }
     }
-    
+
     Ok(())
 }
 
 /// Handle listing assets in a file
-fn handle_list_assets(
-    input: &Path,
-    details: bool,
-    plugin_registry: PluginRegistry,
-) -> Result<()> {
+fn handle_list_assets(input: &Path, details: bool, plugin_registry: PluginRegistry) -> Result<()> {
     info!("Listing assets in: {}", input.display());
-    
+
     if !input.exists() {
         return Err(anyhow::anyhow!("File not found: {}", input.display()));
     }
-    
+
     // Read file header for plugin detection
     let header = std::fs::read(input).context("Failed to read file")?;
-    let header_preview = if header.len() > 1024 { &header[..1024] } else { &header };
-    
+    let header_preview = if header.len() > 1024 {
+        &header[..1024]
+    } else {
+        &header
+    };
+
     // Find suitable plugin
     if let Some(plugin_factory) = plugin_registry.find_handler(input, header_preview) {
         println!("📋 File: {}", input.display());
-        println!("🔌 Plugin: {} v{}", plugin_factory.name(), plugin_factory.version());
-        
+        println!(
+            "🔌 Plugin: {} v{}",
+            plugin_factory.name(),
+            plugin_factory.version()
+        );
+
         // Create handler and list entries
         match plugin_factory.create_handler(input) {
             Ok(handler) => {
                 match handler.list_entries() {
                     Ok(entries) => {
                         println!("📦 Assets found: {}", entries.len());
-                        
+
                         if details {
                             println!("\n📝 Asset details:");
                             for entry in &entries {
-                                println!("   • {} ({})", entry.name, entry.file_type.as_deref().unwrap_or("unknown"));
+                                println!(
+                                    "   • {} ({})",
+                                    entry.name,
+                                    entry.file_type.as_deref().unwrap_or("unknown")
+                                );
                                 println!("     Size: {} bytes", entry.size_uncompressed);
                                 if let Some(compressed) = entry.size_compressed {
-                                    let ratio = (1.0 - compressed as f64 / entry.size_uncompressed as f64) * 100.0;
-                                    println!("     Compressed: {} bytes ({:.1}% reduction)", compressed, ratio);
+                                    let ratio = (1.0
+                                        - compressed as f64 / entry.size_uncompressed as f64)
+                                        * 100.0;
+                                    println!(
+                                        "     Compressed: {} bytes ({:.1}% reduction)",
+                                        compressed, ratio
+                                    );
                                 }
                             }
                         } else {
@@ -486,7 +532,7 @@ fn handle_list_assets(
                                 let entry_type = entry.file_type.as_deref().unwrap_or("unknown");
                                 *type_counts.entry(entry_type).or_insert(0) += 1;
                             }
-                            
+
                             println!("\n📊 Asset types:");
                             for (asset_type, count) in type_counts {
                                 println!("   • {}: {} files", asset_type, count);
@@ -508,29 +554,40 @@ fn handle_list_assets(
         println!("❌ No plugin found for file: {}", input.display());
         println!("\n💡 Supported formats:");
         for plugin in plugin_registry.list_plugins() {
-            println!("   • {}: {}", plugin.name(), plugin.supported_extensions().join(", "));
+            println!(
+                "   • {}: {}",
+                plugin.name(),
+                plugin.supported_extensions().join(", ")
+            );
         }
     }
-    
+
     Ok(())
 }
 
 /// Handle listing available plugins
 fn handle_list_plugins(plugin_registry: PluginRegistry) -> Result<()> {
     println!("🔌 Available plugins:");
-    
+
     let plugins = plugin_registry.list_plugins();
     if plugins.is_empty() {
         println!("   No plugins loaded!");
         return Ok(());
     }
-    
+
     for plugin in plugins {
         let compliance = plugin.compliance_info();
-        let status = if compliance.compliance_verified { "✅" } else { "⚠️" };
-        
+        let status = if compliance.compliance_verified {
+            "✅"
+        } else {
+            "⚠️"
+        };
+
         println!("   {} {} v{}", status, plugin.name(), plugin.version());
-        println!("      Extensions: {}", plugin.supported_extensions().join(", "));
+        println!(
+            "      Extensions: {}",
+            plugin.supported_extensions().join(", ")
+        );
         if let Some(author) = &compliance.author {
             println!("      Author: {}", author);
         }
@@ -540,37 +597,56 @@ fn handle_list_plugins(plugin_registry: PluginRegistry) -> Result<()> {
 }
 
 /// Convert extracted assets to standard formats
-fn convert_extracted_assets(result: &aegis_core::extract::ExtractionResult, output_dir: &std::path::Path) -> Result<Vec<aegis_core::export::ExportedFile>> {
-    use aegis_core::export::Exporter;
-    use aegis_core::resource::{ResourceType, TextureResource, MeshResource};
+fn convert_extracted_assets(
+    result: &aegis_core::extract::ExtractionResult,
+    output_dir: &std::path::Path,
+) -> Result<Vec<aegis_core::export::ExportedFile>> {
+    use aegis_core::export::{ExportedFile, Exporter};
+    use aegis_core::resource::{MeshResource, ResourceType, TextureResource};
 
     let exporter = Exporter::new();
     let mut all_converted_files = Vec::new();
 
     for resource in &result.resources {
+        for converted_path in resource.converted_output_paths() {
+            if let Ok(metadata) = std::fs::metadata(converted_path) {
+                if let Some(format) = infer_export_format(converted_path) {
+                    all_converted_files.push(ExportedFile {
+                        path: converted_path.clone(),
+                        size_bytes: metadata.len(),
+                        format,
+                        source_resource: resource.name.clone(),
+                    });
+                }
+            }
+        }
+
         match resource.resource_type {
             ResourceType::Texture => {
                 // Convert generic resource to TextureResource
                 // This is a simplified approach - in a real implementation,
                 // the Unity plugin would provide properly structured resources
-                if let Ok(texture_data) = std::fs::read(output_dir.join(&resource.name)) {
-                    let texture_resource = TextureResource {
-                        name: resource.name.clone(),
-                        width: 256,  // Placeholder - real implementation would parse this
-                        height: 256, // Placeholder - real implementation would parse this
-                        format: aegis_core::resource::TextureFormat::RGBA8,
-                        data: texture_data,
-                        mip_levels: 1,
-                        usage_hint: None,
-                    };
+                if let Some(raw_path) = resource.raw_output_path() {
+                    if let Ok(texture_data) = std::fs::read(raw_path) {
+                        let texture_resource = TextureResource {
+                            name: resource.name.clone(),
+                            width: 256, // Placeholder - real implementation would parse this
+                            height: 256, // Placeholder - real implementation would parse this
+                            format: aegis_core::resource::TextureFormat::RGBA8,
+                            data: texture_data,
+                            mip_levels: 1,
+                            usage_hint: None,
+                        };
 
-                    let converted = exporter.export_texture(&texture_resource, output_dir, None)?;
-                    all_converted_files.extend(converted);
+                        let converted =
+                            exporter.export_texture(&texture_resource, output_dir, None)?;
+                        all_converted_files.extend(converted);
+                    }
                 }
-            },
+            }
             ResourceType::Mesh => {
                 // Convert generic resource to MeshResource
-                if let Ok(mesh_data) = std::fs::read(output_dir.join(&resource.name)) {
+                if resource.raw_output_path().is_some() {
                     let mesh_resource = MeshResource {
                         name: resource.name.clone(),
                         vertices: Vec::new(), // Placeholder
@@ -582,7 +658,7 @@ fn convert_extracted_assets(result: &aegis_core::extract::ExtractionResult, outp
                     let converted = exporter.export_mesh(&mesh_resource, output_dir, None)?;
                     all_converted_files.extend(converted);
                 }
-            },
+            }
             _ => {
                 // For other resource types, just copy as-is for now
                 continue;
@@ -591,6 +667,24 @@ fn convert_extracted_assets(result: &aegis_core::extract::ExtractionResult, outp
     }
 
     Ok(all_converted_files)
+}
+
+fn infer_export_format(path: &std::path::Path) -> Option<aegis_core::export::ExportFormat> {
+    match path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_lowercase())
+    {
+        Some(ref ext) if ext == "png" => Some(aegis_core::export::ExportFormat::Png),
+        Some(ref ext) if ext == "gltf" || ext == "glb" => {
+            Some(aegis_core::export::ExportFormat::GltF2)
+        }
+        Some(ref ext) if ext == "ktx2" => Some(aegis_core::export::ExportFormat::Ktx2),
+        Some(ref ext) if ext == "ogg" => Some(aegis_core::export::ExportFormat::Ogg),
+        Some(ref ext) if ext == "wav" => Some(aegis_core::export::ExportFormat::Wav),
+        Some(ref ext) if ext == "json" => Some(aegis_core::export::ExportFormat::Json),
+        _ => None,
+    }
 }
 
 /// Format byte count as human-readable string
@@ -613,7 +707,7 @@ fn format_bytes(bytes: u64) -> String {
 
 /// Handle database commands
 fn handle_db_command(command: &DbCommands) -> Result<()> {
-    use aegis_core::asset_db::{AssetDatabase, SearchQuery, SortOrder, AssetType};
+    use aegis_core::asset_db::{AssetDatabase, AssetType, SearchQuery, SortOrder};
 
     match command {
         DbCommands::Search {
@@ -627,18 +721,19 @@ fn handle_db_command(command: &DbCommands) -> Result<()> {
             let mut db = AssetDatabase::new("./assets.db")?;
 
             // Parse asset type if provided
-            let asset_type_filter = asset_type.as_ref().and_then(|t| {
-                match t.to_lowercase().as_str() {
-                    "texture" => Some(AssetType::Texture),
-                    "mesh" => Some(AssetType::Mesh),
-                    "audio" => Some(AssetType::Audio),
-                    "animation" => Some(AssetType::Animation),
-                    "material" => Some(AssetType::Material),
-                    "level" => Some(AssetType::Level),
-                    "script" => Some(AssetType::Script),
-                    _ => Some(AssetType::Other(t.clone())),
-                }
-            });
+            let asset_type_filter =
+                asset_type
+                    .as_ref()
+                    .and_then(|t| match t.to_lowercase().as_str() {
+                        "texture" => Some(AssetType::Texture),
+                        "mesh" => Some(AssetType::Mesh),
+                        "audio" => Some(AssetType::Audio),
+                        "animation" => Some(AssetType::Animation),
+                        "material" => Some(AssetType::Material),
+                        "level" => Some(AssetType::Level),
+                        "script" => Some(AssetType::Script),
+                        _ => Some(AssetType::Other(t.clone())),
+                    });
 
             let search_query = SearchQuery {
                 text: query.clone(),
@@ -661,15 +756,20 @@ fn handle_db_command(command: &DbCommands) -> Result<()> {
 
             for (i, result) in results.iter().enumerate() {
                 let asset = &result.asset;
-                println!("{}. {} ({:?}) - {} bytes",
-                        i + 1,
-                        asset.name,
-                        asset.asset_type,
-                        format_bytes(asset.file_size));
+                println!(
+                    "{}. {} ({:?}) - {} bytes",
+                    i + 1,
+                    asset.name,
+                    asset.asset_type,
+                    format_bytes(asset.file_size)
+                );
 
                 if *verbose {
                     println!("   📁 Path: {}", asset.output_path.display());
-                    println!("   🎮 Game: {}", asset.game_id.as_deref().unwrap_or("Unknown"));
+                    println!(
+                        "   🎮 Game: {}",
+                        asset.game_id.as_deref().unwrap_or("Unknown")
+                    );
                     println!("   🏷️  Tags: {}", asset.tags.join(", "));
                     if let Some(desc) = &asset.description {
                         println!("   📝 Description: {}", desc);
@@ -680,7 +780,11 @@ fn handle_db_command(command: &DbCommands) -> Result<()> {
             }
         }
 
-        DbCommands::Index { directory, game, tags } => {
+        DbCommands::Index {
+            directory,
+            game,
+            tags,
+        } => {
             println!("📝 Indexing assets from: {}", directory.display());
 
             let mut db = AssetDatabase::new("./assets.db")?;
@@ -690,10 +794,11 @@ fn handle_db_command(command: &DbCommands) -> Result<()> {
             for entry in walkdir::WalkDir::new(directory)
                 .into_iter()
                 .filter_map(|e| e.ok())
-                .filter(|e| e.file_type().is_file()) {
-
+                .filter(|e| e.file_type().is_file())
+            {
                 let path = entry.path();
-                let file_name = path.file_name()
+                let file_name = path
+                    .file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or("unknown");
 
@@ -719,12 +824,15 @@ fn handle_db_command(command: &DbCommands) -> Result<()> {
                 let file_size = metadata.len();
 
                 // Generate content hash
-                let content_hash = if file_size < 1024 * 1024 { // Only hash small files
+                let content_hash = if file_size < 1024 * 1024 {
+                    // Only hash small files
                     let data = std::fs::read(path)?;
                     blake3::hash(&data).to_hex().to_string()
                 } else {
                     // For large files, use file path as hash
-                    blake3::hash(path.to_string_lossy().as_bytes()).to_hex().to_string()
+                    blake3::hash(path.to_string_lossy().as_bytes())
+                        .to_hex()
+                        .to_string()
                 };
 
                 // Create asset metadata
@@ -750,7 +858,11 @@ fn handle_db_command(command: &DbCommands) -> Result<()> {
                 indexed_count += 1;
             }
 
-            println!("✅ Indexed {} assets from {}", indexed_count, directory.display());
+            println!(
+                "✅ Indexed {} assets from {}",
+                indexed_count,
+                directory.display()
+            );
         }
 
         DbCommands::Stats => {
@@ -798,15 +910,21 @@ fn handle_db_command(command: &DbCommands) -> Result<()> {
                 return Ok(());
             }
 
-            println!("📋 Assets in database (showing {} of {}):", assets_to_show.len(), assets.len());
+            println!(
+                "📋 Assets in database (showing {} of {}):",
+                assets_to_show.len(),
+                assets.len()
+            );
             println!();
 
             for (i, asset) in assets_to_show.iter().enumerate() {
-                println!("{}. {} ({:?}) - {} bytes",
-                        i + 1,
-                        asset.name,
-                        asset.asset_type,
-                        format_bytes(asset.file_size));
+                println!(
+                    "{}. {} ({:?}) - {} bytes",
+                    i + 1,
+                    asset.name,
+                    asset.asset_type,
+                    format_bytes(asset.file_size)
+                );
                 println!("   📁 {}", asset.output_path.display());
                 if !asset.tags.is_empty() {
                     println!("   🏷️  {}", asset.tags.join(", "));
@@ -817,7 +935,6 @@ fn handle_db_command(command: &DbCommands) -> Result<()> {
                 println!();
             }
         }
-
     }
 
     Ok(())
@@ -825,12 +942,8 @@ fn handle_db_command(command: &DbCommands) -> Result<()> {
 
 /// Handle the API server command
 #[cfg(feature = "api")]
-async fn handle_serve_command(
-    address: &str,
-    database: &std::path::Path,
-    cors: bool,
-) -> Result<()> {
-    use aegis_core::api::{ApiServer, ApiConfig};
+async fn handle_serve_command(address: &str, database: &std::path::Path, cors: bool) -> Result<()> {
+    use aegis_core::api::{ApiConfig, ApiServer};
 
     println!("🚀 Starting Aegis-Assets API server...");
     println!("📍 Address: {}", address);
@@ -843,11 +956,11 @@ async fn handle_serve_command(
         rate_limit: Some(100),
     };
 
-    let server = ApiServer::with_config(config).await
+    let server = ApiServer::with_config(config)
+        .await
         .context("Failed to create API server")?;
 
-    let addr = address.parse()
-        .context("Invalid server address")?;
+    let addr = address.parse().context("Invalid server address")?;
 
     println!("✅ Server ready! API endpoints available at:");
     println!("   📋 Health: http://{}/api/v1/health", address);
@@ -858,8 +971,178 @@ async fn handle_serve_command(
     println!();
     println!("Press Ctrl+C to stop the server");
 
-    server.serve(addr).await
-        .context("Server error")?;
+    server.serve(addr).await.context("Server error")?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aegis_core::archive::{
+        ArchiveHandler, ComplianceLevel, ComplianceProfile, ConvertedEntry, EntryId, EntryMetadata,
+        PluginInfo, Provenance,
+    };
+    use aegis_core::{ComplianceRegistry, PluginFactory, PluginRegistry};
+    use chrono::Utc;
+    use tempfile::TempDir;
+    use uuid::Uuid;
+
+    const RAW_DATA: [u8; 64] = [7u8; 64];
+
+    #[test]
+    fn cli_extracts_files_to_disk() {
+        let mut plugin_registry = PluginRegistry::new();
+        plugin_registry.register_plugin(Box::new(MockFactory));
+
+        let compliance_registry = ComplianceRegistry::new();
+        let temp_dir = TempDir::new().unwrap();
+
+        let input = temp_dir.path().join("bundle.mock");
+        std::fs::write(&input, b"MOCKDATA").unwrap();
+        let output_dir = temp_dir.path().join("output");
+
+        handle_extract(
+            &input,
+            Some(output_dir.as_path()),
+            None,
+            false,
+            false,
+            false,
+            plugin_registry,
+            compliance_registry,
+        )
+        .expect("extraction should succeed");
+
+        let raw_path = output_dir.join("textures/mock_texture.bin");
+        assert!(raw_path.exists());
+        assert_eq!(std::fs::read(&raw_path).unwrap().len(), RAW_DATA.len());
+
+        let converted_path = output_dir.join("converted/mock_texture.png");
+        assert!(converted_path.exists());
+    }
+
+    struct MockFactory;
+
+    impl PluginFactory for MockFactory {
+        fn name(&self) -> &str {
+            "Mock"
+        }
+
+        fn version(&self) -> &str {
+            "1.0.0"
+        }
+
+        fn supported_extensions(&self) -> Vec<&str> {
+            vec!["mock"]
+        }
+
+        fn can_handle(&self, _bytes: &[u8]) -> bool {
+            true
+        }
+
+        fn create_handler(
+            &self,
+            path: &std::path::Path,
+        ) -> anyhow::Result<Box<dyn ArchiveHandler>> {
+            Ok(Box::new(MockHandler::new(path)?))
+        }
+
+        fn compliance_info(&self) -> PluginInfo {
+            PluginInfo {
+                name: "Mock".to_string(),
+                version: "1.0.0".to_string(),
+                author: Some("CLI Test".to_string()),
+                compliance_verified: true,
+            }
+        }
+    }
+
+    struct MockHandler {
+        compliance_profile: ComplianceProfile,
+        provenance: Provenance,
+    }
+
+    impl MockHandler {
+        fn new(path: &std::path::Path) -> anyhow::Result<Self> {
+            let compliance_profile = ComplianceProfile {
+                publisher: "Mock Publisher".to_string(),
+                game_id: Some("mock_game".to_string()),
+                enforcement_level: ComplianceLevel::Permissive,
+                official_support: true,
+                bounty_eligible: false,
+                enterprise_warning: None,
+                mod_policy_url: None,
+                supported_formats: std::collections::HashMap::new(),
+            };
+
+            let source_bytes = std::fs::read(path)?;
+            let provenance = Provenance {
+                session_id: Uuid::new_v4(),
+                game_id: Some("mock_game".to_string()),
+                source_hash: blake3::hash(&source_bytes).to_hex().to_string(),
+                source_path: path.to_path_buf(),
+                compliance_profile: compliance_profile.clone(),
+                extraction_time: Utc::now(),
+                aegis_version: aegis_core::VERSION.to_string(),
+                plugin_info: PluginInfo {
+                    name: "Mock".to_string(),
+                    version: "1.0.0".to_string(),
+                    author: Some("CLI Test".to_string()),
+                    compliance_verified: true,
+                },
+            };
+
+            Ok(Self {
+                compliance_profile,
+                provenance,
+            })
+        }
+    }
+
+    impl ArchiveHandler for MockHandler {
+        fn detect(_bytes: &[u8]) -> bool {
+            true
+        }
+
+        fn open(path: &std::path::Path) -> anyhow::Result<Self>
+        where
+            Self: Sized,
+        {
+            Self::new(path)
+        }
+
+        fn compliance_profile(&self) -> &ComplianceProfile {
+            &self.compliance_profile
+        }
+
+        fn list_entries(&self) -> anyhow::Result<Vec<EntryMetadata>> {
+            Ok(vec![EntryMetadata {
+                id: EntryId::new("entry_1"),
+                name: "mock_texture".to_string(),
+                path: std::path::PathBuf::from("textures/mock_texture.bin"),
+                size_compressed: None,
+                size_uncompressed: RAW_DATA.len() as u64,
+                file_type: Some("texture".to_string()),
+                last_modified: None,
+                checksum: None,
+            }])
+        }
+
+        fn read_entry(&self, _id: &EntryId) -> anyhow::Result<Vec<u8>> {
+            Ok(RAW_DATA.to_vec())
+        }
+
+        fn read_converted_entry(&self, _id: &EntryId) -> anyhow::Result<Option<ConvertedEntry>> {
+            Ok(Some(ConvertedEntry {
+                filename: "mock_texture.png".to_string(),
+                data: b"converted".to_vec(),
+                converted: true,
+            }))
+        }
+
+        fn provenance(&self) -> &Provenance {
+            &self.provenance
+        }
+    }
 }

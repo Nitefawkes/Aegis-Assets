@@ -47,3 +47,4 @@ api = ["aegis-core/api"]
 
 [dev-dependencies]
 tempfile = "3.8"
+uuid = "1"

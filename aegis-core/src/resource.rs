@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 /// Type of resource extracted from a game archive
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -23,6 +24,16 @@ pub struct Resource {
     pub size: u64,
     pub format: String,
     pub metadata: HashMap<String, String>,
+    pub outputs: ResourceOutputs,
+}
+
+/// Physical outputs generated during extraction/conversion for a resource
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ResourceOutputs {
+    /// Path to the raw bytes written to disk
+    pub raw: Option<PathBuf>,
+    /// Paths to any converted representations written to disk
+    pub converted: Vec<PathBuf>,
 }
 
 /// Texture resource with specific properties
@@ -271,7 +282,13 @@ pub struct TerrainLayer {
 
 impl Resource {
     /// Create a new generic resource
-    pub fn new(id: String, name: String, resource_type: ResourceType, size: u64, format: String) -> Self {
+    pub fn new(
+        id: String,
+        name: String,
+        resource_type: ResourceType,
+        size: u64,
+        format: String,
+    ) -> Self {
         Self {
             id,
             name,
@@ -279,12 +296,38 @@ impl Resource {
             size,
             format,
             metadata: HashMap::new(),
+            outputs: ResourceOutputs::default(),
         }
     }
-    
+
     /// Add metadata to the resource
     pub fn with_metadata(mut self, key: String, value: String) -> Self {
         self.metadata.insert(key, value);
         self
+    }
+
+    /// Associate the raw output path for this resource
+    pub fn set_raw_path<P: Into<PathBuf>>(&mut self, path: P) {
+        self.outputs.raw = Some(path.into());
+    }
+
+    /// Register a converted output path for this resource
+    pub fn add_converted_path<P: Into<PathBuf>>(&mut self, path: P) {
+        self.outputs.converted.push(path.into());
+    }
+
+    /// Get the string representation of the resource type for display/logging
+    pub fn resource_type(&self) -> String {
+        format!("{:?}", self.resource_type)
+    }
+
+    /// Retrieve the raw output path if available
+    pub fn raw_output_path(&self) -> Option<&Path> {
+        self.outputs.raw.as_deref()
+    }
+
+    /// Retrieve any converted output paths written for this resource
+    pub fn converted_output_paths(&self) -> &[PathBuf] {
+        &self.outputs.converted
     }
 }

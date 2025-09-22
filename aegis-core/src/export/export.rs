@@ -1,8 +1,11 @@
-use crate::{archive::Provenance, resource::{Resource, TextureFormat}};
-use anyhow::{Result, Context};
+use crate::{
+    archive::Provenance,
+    resource::{Resource, TextureFormat},
+};
+use anyhow::{Context, Result};
+use image::{ImageBuffer, Rgba};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use image::{ImageBuffer, Rgba};
 
 /// Supported export formats
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -92,12 +95,12 @@ impl Exporter {
             options: ExportOptions::default(),
         }
     }
-    
+
     /// Create exporter with custom options
     pub fn with_options(options: ExportOptions) -> Self {
         Self { options }
     }
-    
+
     /// Export resources to the specified directory
     pub fn export_resources(
         &self,
@@ -109,11 +112,10 @@ impl Exporter {
         let mut exported_files = Vec::new();
         let mut total_bytes = 0u64;
         let mut warnings = Vec::new();
-        
+
         // Create output directory
-        std::fs::create_dir_all(output_dir)
-            .context("Failed to create output directory")?;
-        
+        std::fs::create_dir_all(output_dir).context("Failed to create output directory")?;
+
         // Export each resource
         for resource in resources {
             match self.export_single_resource(resource, output_dir, provenance) {
@@ -124,16 +126,12 @@ impl Exporter {
                     exported_files.append(&mut files);
                 }
                 Err(e) => {
-                    let warning = format!(
-                        "Failed to export resource '{}': {}",
-                        &resource.name,
-                        e
-                    );
+                    let warning = format!("Failed to export resource '{}': {}", &resource.name, e);
                     warnings.push(warning);
                 }
             }
         }
-        
+
         // Generate manifest if requested
         if self.options.generate_manifest {
             match self.generate_manifest(&exported_files, output_dir, provenance) {
@@ -146,9 +144,9 @@ impl Exporter {
                 }
             }
         }
-        
+
         let duration = start_time.elapsed();
-        
+
         Ok(ExportResult {
             files: exported_files,
             total_bytes,
@@ -156,7 +154,7 @@ impl Exporter {
             warnings,
         })
     }
-    
+
     /// Export a single resource
     fn export_single_resource(
         &self,
@@ -165,7 +163,7 @@ impl Exporter {
         provenance: Option<&Provenance>,
     ) -> Result<Vec<ExportedFile>> {
         let mut files = Vec::new();
-        
+
         match &resource.resource_type {
             crate::resource::ResourceType::Texture => {
                 // For now, just export as generic JSON since we don't have texture data access
@@ -192,10 +190,10 @@ impl Exporter {
                 files.extend(self.export_generic_json(resource, output_dir, provenance)?);
             }
         }
-        
+
         Ok(files)
     }
-    
+
     /// Export texture resource
     pub fn export_texture(
         &self,
@@ -204,42 +202,48 @@ impl Exporter {
         _provenance: Option<&Provenance>,
     ) -> Result<Vec<ExportedFile>> {
         let mut files = Vec::new();
-        
+
         // Determine export format
         let format = if self.options.compress_textures && texture.data.len() > 64 * 1024 {
             ExportFormat::Ktx2
         } else {
             ExportFormat::Png
         };
-        
+
         let file_extension = match format {
             ExportFormat::Ktx2 => "ktx2",
             ExportFormat::Png => "png",
             _ => "bin",
         };
-        
+
         let output_path = output_dir.join(format!("{}.{}", texture.name, file_extension));
-        
+
         // Convert texture data to PNG
         let png_data = match texture.format {
             TextureFormat::RGBA8 => {
                 // Direct RGBA8 - just use as-is
-                ImageBuffer::<Rgba<u8>, _>::from_raw(texture.width, texture.height, texture.data.clone())
-                    .context("Failed to create RGBA8 image from texture data")?
-            },
+                ImageBuffer::<Rgba<u8>, _>::from_raw(
+                    texture.width,
+                    texture.height,
+                    texture.data.clone(),
+                )
+                .context("Failed to create RGBA8 image from texture data")?
+            }
             TextureFormat::RGB8 => {
                 // RGB8 - convert to RGBA8 by adding alpha channel
-                let mut rgba_data = Vec::with_capacity(texture.width as usize * texture.height as usize * 4);
+                let mut rgba_data =
+                    Vec::with_capacity(texture.width as usize * texture.height as usize * 4);
                 for chunk in texture.data.chunks(3) {
                     rgba_data.extend_from_slice(chunk);
                     rgba_data.push(255); // Add alpha channel
                 }
                 ImageBuffer::<Rgba<u8>, _>::from_raw(texture.width, texture.height, rgba_data)
                     .context("Failed to create RGBA8 image from RGB8 texture data")?
-            },
+            }
             TextureFormat::RGBA16 => {
                 // RGBA16 - convert to RGBA8 (16-bit to 8-bit)
-                let mut rgba8_data = Vec::with_capacity(texture.width as usize * texture.height as usize * 4);
+                let mut rgba8_data =
+                    Vec::with_capacity(texture.width as usize * texture.height as usize * 4);
                 for chunk in texture.data.chunks(2) {
                     if chunk.len() == 2 {
                         // Convert 16-bit to 8-bit (simple approach - take upper 8 bits)
@@ -251,9 +255,13 @@ impl Exporter {
                 }
                 ImageBuffer::<Rgba<u8>, _>::from_raw(texture.width, texture.height, rgba8_data)
                     .context("Failed to create RGBA8 image from RGBA16 texture data")?
-            },
-            TextureFormat::DXT1 | TextureFormat::DXT3 | TextureFormat::DXT5 |
-            TextureFormat::BC7 | TextureFormat::ETC2 | TextureFormat::ASTC => {
+            }
+            TextureFormat::DXT1
+            | TextureFormat::DXT3
+            | TextureFormat::DXT5
+            | TextureFormat::BC7
+            | TextureFormat::ETC2
+            | TextureFormat::ASTC => {
                 // Compressed formats - for now, create a placeholder image
                 // TODO: Implement proper decompression for compressed formats
                 let mut placeholder = ImageBuffer::new(texture.width, texture.height);
@@ -269,9 +277,10 @@ impl Exporter {
         };
 
         // Save as PNG
-        png_data.save_with_format(&output_path, image::ImageFormat::Png)
+        png_data
+            .save_with_format(&output_path, image::ImageFormat::Png)
             .context("Failed to save texture as PNG")?;
-        
+
         let metadata = std::fs::metadata(&output_path)?;
         files.push(ExportedFile {
             path: output_path,
@@ -279,10 +288,10 @@ impl Exporter {
             format,
             source_resource: texture.name.clone(),
         });
-        
+
         Ok(files)
     }
-    
+
     /// Export mesh resource to glTF
     pub fn export_mesh(
         &self,
@@ -291,13 +300,12 @@ impl Exporter {
         provenance: Option<&Provenance>,
     ) -> Result<Vec<ExportedFile>> {
         let output_path = output_dir.join(format!("{}.gltf", mesh.name));
-        
+
         // Create basic glTF structure (mock implementation)
         let gltf_data = self.create_gltf_from_mesh(mesh, provenance)?;
-        
-        std::fs::write(&output_path, &gltf_data)
-            .context("Failed to write glTF file")?;
-        
+
+        std::fs::write(&output_path, &gltf_data).context("Failed to write glTF file")?;
+
         let metadata = std::fs::metadata(&output_path)?;
         Ok(vec![ExportedFile {
             path: output_path,
@@ -306,7 +314,7 @@ impl Exporter {
             source_resource: mesh.name.clone(),
         }])
     }
-    
+
     /// Create glTF 2.0 JSON from mesh with binary data
     fn create_gltf_from_mesh(
         &self,
@@ -314,58 +322,76 @@ impl Exporter {
         provenance: Option<&Provenance>,
     ) -> Result<Vec<u8>> {
         let mut gltf = serde_json::Map::new();
-        
+
         // glTF asset information
-        gltf.insert("asset".to_string(), serde_json::json!({
-            "version": "2.0",
-            "generator": "Aegis-Assets Core v0.1.0",
-            "copyright": "Extracted for personal use only - check original game licensing"
-        }));
-        
+        gltf.insert(
+            "asset".to_string(),
+            serde_json::json!({
+                "version": "2.0",
+                "generator": "Aegis-Assets Core v0.1.0",
+                "copyright": "Extracted for personal use only - check original game licensing"
+            }),
+        );
+
         // Add provenance information
         if let Some(prov) = provenance {
-            gltf.insert("extras".to_string(), serde_json::json!({
-                "aegis_provenance": {
-                    "session_id": prov.session_id,
-                    "source_hash": prov.source_hash,
-                    "extraction_time": prov.extraction_time.to_rfc3339(),
-                    "aegis_version": prov.aegis_version
-                },
-                "extraction_method": "aegis_assets_unity_plugin",
-                "legal_status": "personal_use_only",
-                "compliance_profile": prov.compliance_profile.publisher
-            }));
+            gltf.insert(
+                "extras".to_string(),
+                serde_json::json!({
+                    "aegis_provenance": {
+                        "session_id": prov.session_id,
+                        "source_hash": prov.source_hash,
+                        "extraction_time": prov.extraction_time.to_rfc3339(),
+                        "aegis_version": prov.aegis_version
+                    },
+                    "extraction_method": "aegis_assets_unity_plugin",
+                    "legal_status": "personal_use_only",
+                    "compliance_profile": prov.compliance_profile.publisher
+                }),
+            );
         }
-        
+
         // Create binary data for vertices and indices
         let (binary_data, accessors) = self.create_mesh_binary_data(mesh)?;
 
         // Create buffer view for the binary data
-        gltf.insert("bufferViews".to_string(), serde_json::json!([{
-            "buffer": 0,
-            "byteOffset": 0,
-            "byteLength": binary_data.len(),
-            "target": 34962  // ARRAY_BUFFER
-        }]));
+        gltf.insert(
+            "bufferViews".to_string(),
+            serde_json::json!([{
+                "buffer": 0,
+                "byteOffset": 0,
+                "byteLength": binary_data.len(),
+                "target": 34962  // ARRAY_BUFFER
+            }]),
+        );
 
         // Create buffer
-        gltf.insert("buffers".to_string(), serde_json::json!([{
-            "byteLength": binary_data.len(),
-            "uri": format!("{}.bin", mesh.name)
-        }]));
+        gltf.insert(
+            "buffers".to_string(),
+            serde_json::json!([{
+                "byteLength": binary_data.len(),
+                "uri": format!("{}.bin", mesh.name)
+            }]),
+        );
 
         // Scene setup
         gltf.insert("scene".to_string(), serde_json::Value::Number(0.into()));
-        gltf.insert("scenes".to_string(), serde_json::json!([{
-            "name": "Scene",
-            "nodes": [0]
-        }]));
-        
+        gltf.insert(
+            "scenes".to_string(),
+            serde_json::json!([{
+                "name": "Scene",
+                "nodes": [0]
+            }]),
+        );
+
         // Node with mesh
-        gltf.insert("nodes".to_string(), serde_json::json!([{
-            "name": mesh.name,
-            "mesh": 0
-        }]));
+        gltf.insert(
+            "nodes".to_string(),
+            serde_json::json!([{
+                "name": mesh.name,
+                "mesh": 0
+            }]),
+        );
 
         // Mesh with primitives
         let mut primitives = Vec::new();
@@ -381,7 +407,10 @@ impl Exporter {
 
         // UV attribute (if available)
         if mesh.vertices.iter().any(|v| v.uv.is_some()) {
-            attributes.insert("TEXCOORD_0".to_string(), serde_json::Value::Number(2.into()));
+            attributes.insert(
+                "TEXCOORD_0".to_string(),
+                serde_json::Value::Number(2.into()),
+            );
         }
 
         // Color attribute (if available)
@@ -394,25 +423,31 @@ impl Exporter {
             "indices": 4,
             "mode": 4  // TRIANGLES
         }));
-        
-        gltf.insert("meshes".to_string(), serde_json::json!([{
-            "name": mesh.name,
-            "primitives": primitives
-        }]));
-        
+
+        gltf.insert(
+            "meshes".to_string(),
+            serde_json::json!([{
+                "name": mesh.name,
+                "primitives": primitives
+            }]),
+        );
+
         // Add accessors
         gltf.insert("accessors".to_string(), serde_json::Value::Array(accessors));
 
         // Create the complete glTF JSON
         let json_value = serde_json::Value::Object(gltf);
-        let json_bytes = serde_json::to_vec_pretty(&json_value)
-            .context("Failed to serialize glTF JSON")?;
+        let json_bytes =
+            serde_json::to_vec_pretty(&json_value).context("Failed to serialize glTF JSON")?;
 
         Ok(json_bytes)
     }
 
     /// Create binary data and accessors for mesh geometry
-    fn create_mesh_binary_data(&self, mesh: &crate::resource::MeshResource) -> Result<(Vec<u8>, Vec<serde_json::Value>)> {
+    fn create_mesh_binary_data(
+        &self,
+        mesh: &crate::resource::MeshResource,
+    ) -> Result<(Vec<u8>, Vec<serde_json::Value>)> {
         let mut binary_data = Vec::new();
         let mut accessors = Vec::new();
 
@@ -458,7 +493,14 @@ impl Exporter {
                     binary_data.extend_from_slice(&normal[2].to_le_bytes());
                 } else {
                     // Default normal if not available
-                    binary_data.extend_from_slice(&[0.0f32.to_le_bytes(), 0.0f32.to_le_bytes(), 1.0f32.to_le_bytes()].concat());
+                    binary_data.extend_from_slice(
+                        &[
+                            0.0f32.to_le_bytes(),
+                            0.0f32.to_le_bytes(),
+                            1.0f32.to_le_bytes(),
+                        ]
+                        .concat(),
+                    );
                 }
             }
         }
@@ -480,7 +522,8 @@ impl Exporter {
                     binary_data.extend_from_slice(&uv[1].to_le_bytes());
                 } else {
                     // Default UV if not available
-                    binary_data.extend_from_slice(&[0.0f32.to_le_bytes(), 0.0f32.to_le_bytes()].concat());
+                    binary_data
+                        .extend_from_slice(&[0.0f32.to_le_bytes(), 0.0f32.to_le_bytes()].concat());
                 }
             }
         }
@@ -504,7 +547,15 @@ impl Exporter {
                     binary_data.extend_from_slice(&color[3].to_le_bytes());
                 } else {
                     // Default white color if not available
-                    binary_data.extend_from_slice(&[1.0f32.to_le_bytes(), 1.0f32.to_le_bytes(), 1.0f32.to_le_bytes(), 1.0f32.to_le_bytes()].concat());
+                    binary_data.extend_from_slice(
+                        &[
+                            1.0f32.to_le_bytes(),
+                            1.0f32.to_le_bytes(),
+                            1.0f32.to_le_bytes(),
+                            1.0f32.to_le_bytes(),
+                        ]
+                        .concat(),
+                    );
                 }
             }
         }
@@ -520,23 +571,29 @@ impl Exporter {
 
         // Write indices to binary data
         for index in &mesh.indices {
-            binary_data.extend_from_slice(&(*index as u16).to_le_bytes());  // Convert to u16 for smaller file size
+            binary_data.extend_from_slice(&(*index as u16).to_le_bytes()); // Convert to u16 for smaller file size
         }
 
         Ok((binary_data, accessors))
     }
 
     /// Calculate position bounds for glTF accessor
-    fn calculate_position_bounds(&self, vertices: &[crate::resource::Vertex], bound_type: usize) -> Vec<f32> {
+    fn calculate_position_bounds(
+        &self,
+        vertices: &[crate::resource::Vertex],
+        bound_type: usize,
+    ) -> Vec<f32> {
         let mut bounds = [0.0f32; 3];
 
         for vertex in vertices {
             for i in 0..3 {
-                if bound_type == 0 {  // min
+                if bound_type == 0 {
+                    // min
                     if vertex.position[i] < bounds[i] {
                         bounds[i] = vertex.position[i];
                     }
-                } else {  // max
+                } else {
+                    // max
                     if vertex.position[i] > bounds[i] {
                         bounds[i] = vertex.position[i];
                     }
@@ -546,7 +603,7 @@ impl Exporter {
 
         bounds.to_vec()
     }
-    
+
     /// Export material resource
     fn export_material(
         &self,
@@ -555,13 +612,11 @@ impl Exporter {
         _provenance: Option<&Provenance>,
     ) -> Result<Vec<ExportedFile>> {
         let output_path = output_dir.join(format!("{}.material.json", material.name));
-        
-        let json = serde_json::to_vec_pretty(material)
-            .context("Failed to serialize material")?;
-        
-        std::fs::write(&output_path, &json)
-            .context("Failed to write material file")?;
-        
+
+        let json = serde_json::to_vec_pretty(material).context("Failed to serialize material")?;
+
+        std::fs::write(&output_path, &json).context("Failed to write material file")?;
+
         let metadata = std::fs::metadata(&output_path)?;
         Ok(vec![ExportedFile {
             path: output_path,
@@ -570,7 +625,7 @@ impl Exporter {
             source_resource: material.name.clone(),
         }])
     }
-    
+
     /// Export audio resource
     fn export_audio(
         &self,
@@ -580,13 +635,12 @@ impl Exporter {
     ) -> Result<Vec<ExportedFile>> {
         let format = ExportFormat::Ogg; // Default to OGG
         let extension = "ogg";
-        
+
         let output_path = output_dir.join(format!("{}.{}", audio.name, extension));
-        
+
         // Mock export - would convert audio data to target format
-        std::fs::write(&output_path, &audio.data)
-            .context("Failed to write audio file")?;
-        
+        std::fs::write(&output_path, &audio.data).context("Failed to write audio file")?;
+
         let metadata = std::fs::metadata(&output_path)?;
         Ok(vec![ExportedFile {
             path: output_path,
@@ -595,7 +649,7 @@ impl Exporter {
             source_resource: audio.name.clone(),
         }])
     }
-    
+
     /// Export animation resource
     fn export_animation(
         &self,
@@ -604,13 +658,11 @@ impl Exporter {
         _provenance: Option<&Provenance>,
     ) -> Result<Vec<ExportedFile>> {
         let output_path = output_dir.join(format!("{}.animation.json", animation.name));
-        
-        let json = serde_json::to_vec_pretty(animation)
-            .context("Failed to serialize animation")?;
-        
-        std::fs::write(&output_path, &json)
-            .context("Failed to write animation file")?;
-        
+
+        let json = serde_json::to_vec_pretty(animation).context("Failed to serialize animation")?;
+
+        std::fs::write(&output_path, &json).context("Failed to write animation file")?;
+
         let metadata = std::fs::metadata(&output_path)?;
         Ok(vec![ExportedFile {
             path: output_path,
@@ -619,7 +671,7 @@ impl Exporter {
             source_resource: animation.name.clone(),
         }])
     }
-    
+
     /// Export resource as generic JSON
     fn export_generic_json(
         &self,
@@ -627,15 +679,15 @@ impl Exporter {
         output_dir: &Path,
         _provenance: Option<&Provenance>,
     ) -> Result<Vec<ExportedFile>> {
-        let output_path = output_dir.join(format!("{}.{:?}.json", 
-            &resource.name, &resource.resource_type));
-        
-        let json = serde_json::to_vec_pretty(resource)
-            .context("Failed to serialize resource")?;
-        
-        std::fs::write(&output_path, &json)
-            .context("Failed to write resource file")?;
-        
+        let output_path = output_dir.join(format!(
+            "{}.{:?}.json",
+            &resource.name, &resource.resource_type
+        ));
+
+        let json = serde_json::to_vec_pretty(resource).context("Failed to serialize resource")?;
+
+        std::fs::write(&output_path, &json).context("Failed to write resource file")?;
+
         let metadata = std::fs::metadata(&output_path)?;
         Ok(vec![ExportedFile {
             path: output_path,
@@ -644,7 +696,7 @@ impl Exporter {
             source_resource: resource.name.clone(),
         }])
     }
-    
+
     /// Generate manifest file
     fn generate_manifest(
         &self,
@@ -653,36 +705,47 @@ impl Exporter {
         provenance: Option<&Provenance>,
     ) -> Result<ExportedFile> {
         let manifest_path = output_dir.join("manifest.json");
-        
+
         let mut manifest = serde_json::Map::new();
-        manifest.insert("version".to_string(), serde_json::Value::String("1.0".to_string()));
-        manifest.insert("generator".to_string(), serde_json::Value::String("Aegis-Assets".to_string()));
-        manifest.insert("exported_at".to_string(), serde_json::Value::String(
-            chrono::Utc::now().to_rfc3339()
-        ));
-        
+        manifest.insert(
+            "version".to_string(),
+            serde_json::Value::String("1.0".to_string()),
+        );
+        manifest.insert(
+            "generator".to_string(),
+            serde_json::Value::String("Aegis-Assets".to_string()),
+        );
+        manifest.insert(
+            "exported_at".to_string(),
+            serde_json::Value::String(chrono::Utc::now().to_rfc3339()),
+        );
+
         if let Some(prov) = provenance {
-            manifest.insert("provenance".to_string(), serde_json::to_value(prov)
-                .context("Failed to serialize provenance")?);
+            manifest.insert(
+                "provenance".to_string(),
+                serde_json::to_value(prov).context("Failed to serialize provenance")?,
+            );
         }
-        
-        let files_info: Vec<_> = exported_files.iter().map(|f| {
-            serde_json::json!({
-                "path": f.path.file_name().unwrap().to_str(),
-                "size_bytes": f.size_bytes,
-                "format": f.format,
-                "source_resource": f.source_resource
+
+        let files_info: Vec<_> = exported_files
+            .iter()
+            .map(|f| {
+                serde_json::json!({
+                    "path": f.path.file_name().unwrap().to_str(),
+                    "size_bytes": f.size_bytes,
+                    "format": f.format,
+                    "source_resource": f.source_resource
+                })
             })
-        }).collect();
-        
+            .collect();
+
         manifest.insert("files".to_string(), serde_json::Value::Array(files_info));
-        
+
         let json = serde_json::to_vec_pretty(&serde_json::Value::Object(manifest))
             .context("Failed to serialize manifest")?;
-        
-        std::fs::write(&manifest_path, &json)
-            .context("Failed to write manifest file")?;
-        
+
+        std::fs::write(&manifest_path, &json).context("Failed to write manifest file")?;
+
         let metadata = std::fs::metadata(&manifest_path)?;
         Ok(ExportedFile {
             path: manifest_path,
@@ -702,22 +765,22 @@ impl Default for Exporter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::resource::{TextureResource, TextureFormat, TextureUsage};
+    use crate::resource::{TextureFormat, TextureResource, TextureUsage};
     use tempfile::TempDir;
-    
+
     #[test]
     fn test_exporter_creation() {
         let exporter = Exporter::new();
         assert!(exporter.options.include_provenance);
         assert!(exporter.options.compress_textures);
     }
-    
+
     #[test]
     fn test_texture_export() {
         let temp_dir = TempDir::new().unwrap();
         let exporter = Exporter::new();
-        
-        let texture = Resource::Texture(TextureResource {
+
+        let texture_resource = TextureResource {
             name: "test_texture".to_string(),
             width: 64,
             height: 64,
@@ -725,17 +788,13 @@ mod tests {
             data: vec![255u8; 64 * 64 * 4],
             mip_levels: 1,
             usage_hint: Some(TextureUsage::Albedo),
-        });
-        
-        let result = exporter.export_resources(
-            &[texture],
-            temp_dir.path(),
-            None,
-        );
-        
+        };
+
+        let result = exporter.export_texture(&texture_resource, temp_dir.path(), None);
+
         assert!(result.is_ok());
-        let export_result = result.unwrap();
-        assert!(!export_result.files.is_empty());
-        assert!(export_result.total_bytes > 0);
+        let files = result.unwrap();
+        assert!(!files.is_empty());
+        assert!(files.iter().map(|f| f.size_bytes).sum::<u64>() > 0);
     }
 }

@@ -63,6 +63,17 @@ impl EntryId {
     }
 }
 
+/// Representation of a converted archive entry provided by a plugin
+#[derive(Debug, Clone)]
+pub struct ConvertedEntry {
+    /// Suggested filename (including extension) for the converted data
+    pub filename: String,
+    /// Converted payload bytes
+    pub data: Vec<u8>,
+    /// Whether this payload differs from the raw bytes (true when an actual conversion occurred)
+    pub converted: bool,
+}
+
 /// Provenance information for tracking asset extraction
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Provenance {
@@ -114,6 +125,11 @@ pub trait ArchiveHandler: Send + Sync {
     /// Read a specific entry by ID
     fn read_entry(&self, id: &EntryId) -> Result<Vec<u8>>;
 
+    /// Read a converted representation of an entry when available
+    fn read_converted_entry(&self, _id: &EntryId) -> Result<Option<ConvertedEntry>> {
+        Ok(None)
+    }
+
     /// Get provenance information for this extraction session
     fn provenance(&self) -> &Provenance;
 
@@ -131,9 +147,7 @@ pub trait ArchiveHandler: Send + Sync {
     /// Get warning message for high-risk extractions
     fn compliance_warning(&self) -> Option<&str> {
         match self.compliance_profile().enforcement_level {
-            ComplianceLevel::HighRisk => {
-                self.compliance_profile().enterprise_warning.as_deref()
-            }
+            ComplianceLevel::HighRisk => self.compliance_profile().enterprise_warning.as_deref(),
             _ => None,
         }
     }
@@ -155,22 +169,26 @@ impl ComplianceRegistry {
     /// Load compliance profiles from directory
     pub fn load_from_directory(dir: &Path) -> Result<Self> {
         let mut registry = Self::new();
-        
+
         for entry in std::fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
-            
-            if path.extension().map_or(false, |ext| ext == "yaml" || ext == "yml") {
+
+            if path
+                .extension()
+                .map_or(false, |ext| ext == "yaml" || ext == "yml")
+            {
                 let content = std::fs::read_to_string(&path)?;
                 let profile: ComplianceProfile = serde_yaml::from_str(&content)?;
-                let key = path.file_stem()
+                let key = path
+                    .file_stem()
                     .and_then(|s| s.to_str())
                     .unwrap_or("unknown")
                     .to_string();
                 registry.profiles.insert(key, profile);
             }
         }
-        
+
         Ok(registry)
     }
 
@@ -194,7 +212,7 @@ impl ComplianceRegistry {
             bounty_eligible: false,
             enterprise_warning: Some(
                 "Unknown game/publisher. Proceed with caution and ensure you own the content."
-                    .to_string()
+                    .to_string(),
             ),
             mod_policy_url: None,
             supported_formats: HashMap::new(),
@@ -211,8 +229,6 @@ impl Default for ComplianceRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
-
     #[test]
     fn test_compliance_levels() {
         let permissive = ComplianceProfile {

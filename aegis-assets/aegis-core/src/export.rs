@@ -1,8 +1,7 @@
 use crate::{archive::Provenance, resource::Resource};
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use std::collections::HashMap;
 
 /// Supported export formats
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

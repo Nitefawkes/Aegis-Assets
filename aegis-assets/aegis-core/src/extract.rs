@@ -1,35 +1,29 @@
-use crate::{
-    archive::{ArchiveHandler, ComplianceRegistry},
-    resource::Resource,
-    PluginRegistry, Config,
-};
-use anyhow::{Result, Context};
+use crate::{archive::ComplianceRegistry, resource::Resource, Config, PluginRegistry};
 use std::path::{Path, PathBuf};
-use std::collections::HashMap;
 use thiserror::Error;
-use tracing::{info, warn, error, debug};
+use tracing::{error, info};
 
 /// Errors that can occur during extraction
 #[derive(Debug, Error)]
 pub enum ExtractionError {
     #[error("No suitable plugin found for file: {0}")]
     NoSuitablePlugin(PathBuf),
-    
+
     #[error("Compliance check failed: {0}")]
     ComplianceViolation(String),
-    
+
     #[error("File not found: {0}")]
     FileNotFound(PathBuf),
-    
+
     #[error("Invalid file format: {0}")]
     InvalidFormat(String),
-    
+
     #[error("Memory limit exceeded (limit: {limit}MB, required: {required}MB)")]
     MemoryLimitExceeded { limit: usize, required: usize },
-    
+
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
-    
+
     #[error("Plugin error: {plugin}: {error}")]
     PluginError { plugin: String, error: String },
 }
@@ -84,14 +78,14 @@ pub struct Extractor {
 
 impl Extractor {
     /// Create a new extractor with default registries
-    pub fn new(compliance_registry: ComplianceRegistry) -> Self {
+    pub fn new(_compliance_registry: ComplianceRegistry) -> Self {
         Self {
             plugin_registry: None,
             compliance_registry: None, // Will be properly initialized
             config: Config::default(),
         }
     }
-    
+
     /// Create extractor with specific registries
     pub fn with_registries(
         plugin_registry: &PluginRegistry,
@@ -104,35 +98,35 @@ impl Extractor {
             config,
         }
     }
-    
+
     /// Extract assets from a file
     pub fn extract_from_file(
         &mut self,
         source_path: &Path,
-        output_dir: &Path,
+        _output_dir: &Path,
     ) -> Result<ExtractionResult, ExtractionError> {
         let start_time = std::time::Instant::now();
-        
+
         info!("Starting extraction from: {}", source_path.display());
-        
+
         // Check if file exists
         if !source_path.exists() {
             return Err(ExtractionError::FileNotFound(source_path.to_path_buf()));
         }
-        
+
         // Read file header for plugin detection
         let mut file = std::fs::File::open(source_path)?;
         let mut header = vec![0u8; 1024];
         use std::io::Read;
         let bytes_read = file.read(&mut header)?;
         header.truncate(bytes_read);
-        
+
         // Find suitable plugin (placeholder - would use actual registry)
         info!("Detecting file format...");
-        
+
         // For now, create a mock result
         let resources = self.mock_extract_resources(source_path)?;
-        
+
         let duration = start_time.elapsed();
         let metrics = ExtractionMetrics {
             duration_ms: duration.as_millis() as u64,
@@ -140,20 +134,20 @@ impl Extractor {
             files_processed: 1,
             bytes_extracted: 1024 * 1024, // Mock value
         };
-        
+
         let compliance_info = ComplianceInfo {
             is_compliant: true,
             risk_level: crate::archive::ComplianceLevel::Neutral,
             warnings: vec!["This is a placeholder implementation".to_string()],
             recommendations: vec!["Ensure you own the source files".to_string()],
         };
-        
+
         info!(
             "Extraction completed in {}ms, {} resources extracted",
             metrics.duration_ms,
             resources.len()
         );
-        
+
         Ok(ExtractionResult {
             source_path: source_path.to_path_buf(),
             resources,
@@ -162,9 +156,12 @@ impl Extractor {
             metrics,
         })
     }
-    
+
     /// Mock resource extraction for initial implementation
-    fn mock_extract_resources(&self, source_path: &Path) -> Result<Vec<Resource>> {
+    fn mock_extract_resources(
+        &self,
+        _source_path: &Path,
+    ) -> Result<Vec<Resource>, ExtractionError> {
         // This is a placeholder - real implementation would use plugins
         let texture = Resource::Texture(crate::resource::TextureResource {
             name: "mock_texture.png".to_string(),
@@ -175,10 +172,10 @@ impl Extractor {
             mip_levels: 1,
             usage_hint: Some(crate::resource::TextureUsage::Albedo),
         });
-        
+
         Ok(vec![texture])
     }
-    
+
     /// Batch extract multiple files
     pub fn extract_batch(
         &mut self,
@@ -186,7 +183,7 @@ impl Extractor {
         output_dir: &Path,
     ) -> Result<Vec<ExtractionResult>, ExtractionError> {
         let mut results = Vec::new();
-        
+
         for source in sources {
             match self.extract_from_file(source, output_dir) {
                 Ok(result) => results.push(result),
@@ -196,10 +193,10 @@ impl Extractor {
                 }
             }
         }
-        
+
         Ok(results)
     }
-    
+
     /// Get extraction statistics
     pub fn get_stats(&self) -> ExtractionStats {
         ExtractionStats {
@@ -227,47 +224,45 @@ unsafe impl Sync for Extractor {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     use std::fs::File;
     use std::io::Write;
-    
+    use tempfile::TempDir;
+
     #[test]
     fn test_extractor_creation() {
         let compliance = ComplianceRegistry::new();
         let extractor = Extractor::new(compliance);
         let stats = extractor.get_stats();
-        
+
         assert_eq!(stats.files_processed, 0);
     }
-    
+
     #[test]
     fn test_file_not_found() {
         let compliance = ComplianceRegistry::new();
         let mut extractor = Extractor::new(compliance);
         let temp_dir = TempDir::new().unwrap();
-        
-        let result = extractor.extract_from_file(
-            &temp_dir.path().join("nonexistent.file"),
-            temp_dir.path(),
-        );
-        
+
+        let result =
+            extractor.extract_from_file(&temp_dir.path().join("nonexistent.file"), temp_dir.path());
+
         assert!(matches!(result, Err(ExtractionError::FileNotFound(_))));
     }
-    
+
     #[test]
     fn test_mock_extraction() {
         let compliance = ComplianceRegistry::new();
         let mut extractor = Extractor::new(compliance);
         let temp_dir = TempDir::new().unwrap();
-        
+
         // Create a dummy file
         let test_file = temp_dir.path().join("test.dat");
         let mut file = File::create(&test_file).unwrap();
         file.write_all(b"test data").unwrap();
-        
+
         let result = extractor.extract_from_file(&test_file, temp_dir.path());
         assert!(result.is_ok());
-        
+
         let extraction_result = result.unwrap();
         assert_eq!(extraction_result.resources.len(), 1);
         assert!(extraction_result.compliance_info.is_compliant);

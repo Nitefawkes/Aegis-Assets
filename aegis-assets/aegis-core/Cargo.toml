@@ -29,6 +29,7 @@ flate2.workspace = true
 lz4_flex.workspace = true
 xz2.workspace = true
 tracing.workspace = true
+tracing-subscriber.workspace = true
 
 # Additional core-specific dependencies
 walkdir = "2.4"
@@ -57,6 +58,3 @@ tempfile = "3.8"
 criterion = "0.5"
 proptest = "1.4"
 
-[[bench]]
-name = "extraction_performance"
-harness = false

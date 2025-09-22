@@ -3,7 +3,6 @@ members = [
     "aegis-core",
     "aegis-python",
     "aegis-plugins/unity",
-    "aegis-plugins/unreal",
 ]
 resolver = "2"
 
@@ -47,14 +46,14 @@ lz4_flex = "0.11"
 xz2 = "0.1"
 
 # Python bindings (for aegis-python)
-pyo3 = { version = "0.20", features = ["extension-module"], optional = true }
+pyo3 = { version = "0.20", features = ["extension-module"] }
 
 # Logging & Diagnostics
 tracing = "0.1"
-tracing-subscriber = "0.3"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 
 # CLI (for main binary)
-clap = { version = "4.4", features = ["derive"], optional = true }
+clap = { version = "4.4", features = ["derive"] }
 
 [profile.release]
 # Optimize for performance

@@ -1,20 +1,20 @@
 use aegis_core::{
-    archive::{ArchiveHandler, ComplianceProfile, EntryMetadata, EntryId, Provenance, PluginInfo},
-    resource::{Resource, TextureResource, MeshResource, TextureFormat, TextureUsage},
+    archive::{ArchiveHandler, ComplianceProfile, EntryId, EntryMetadata, PluginInfo, Provenance},
+    resource::{MeshResource, Resource, TextureFormat, TextureResource, TextureUsage},
     PluginFactory,
 };
-use anyhow::{Result, Context, bail};
+use anyhow::{bail, Context, Result};
 use byteorder::{LittleEndian, ReadBytesExt};
 use std::collections::HashMap;
 use std::io::{Cursor, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use tracing::{debug, info, warn};
 
-mod formats;
 mod compression;
+mod formats;
 
-use formats::{UnityVersion, AssetBundle, SerializedFile};
 use compression::{decompress_lz4, decompress_lzma};
+use formats::{AssetBundle, SerializedFile, UnityVersion};
 
 /// Unity plugin factory
 pub struct UnityPluginFactory;
@@ -23,24 +23,24 @@ impl PluginFactory for UnityPluginFactory {
     fn name(&self) -> &str {
         "Unity"
     }
-    
+
     fn version(&self) -> &str {
         env!("CARGO_PKG_VERSION")
     }
-    
+
     fn supported_extensions(&self) -> Vec<&str> {
         vec!["unity3d", "assets", "sharedAssets", "resource", "resS"]
     }
-    
+
     fn can_handle(&self, bytes: &[u8]) -> bool {
         UnityArchive::detect(bytes)
     }
-    
+
     fn create_handler(&self, path: &Path) -> Result<Box<dyn ArchiveHandler>> {
         let handler = UnityArchive::open(path)?;
         Ok(Box::new(handler))
     }
-    
+
     fn compliance_info(&self) -> PluginInfo {
         PluginInfo {
             name: "Unity".to_string(),
@@ -64,71 +64,71 @@ pub struct UnityArchive {
 impl UnityArchive {
     /// Detect Unity file format from header bytes
     pub fn detect(bytes: &[u8]) -> bool {
-        if bytes.len() < 16 {
+        if bytes.len() < 8 {
             return false;
         }
-        
+
         // Check for UnityFS signature (Unity 5.3+)
         if bytes.starts_with(b"UnityFS\0") {
             return true;
         }
-        
+
         // Check for UnityRaw signature (older versions)
         if bytes.starts_with(b"UnityRaw") {
             return true;
         }
-        
+
         // Check for UnityWeb signature (web builds)
         if bytes.starts_with(b"UnityWeb") {
             return true;
         }
-        
+
         // Check for serialized file format (CAB-* or other Unity signatures)
         if bytes.len() >= 20 {
             let mut cursor = Cursor::new(bytes);
-            
+
             // Try to read metadata table offset
             if let Ok(metadata_size) = cursor.read_u32::<LittleEndian>() {
                 if let Ok(file_size) = cursor.read_u32::<LittleEndian>() {
                     // Basic sanity checks for Unity serialized file
-                    if metadata_size > 0 && 
-                       metadata_size < file_size && 
-                       file_size < bytes.len() as u32 * 2 {
+                    if metadata_size > 0
+                        && metadata_size < file_size
+                        && file_size < bytes.len() as u32 * 2
+                    {
                         return true;
                     }
                 }
             }
         }
-        
+
         false
     }
-    
+
     /// Open Unity archive file
     pub fn open(path: &Path) -> Result<Self> {
         info!("Opening Unity archive: {}", path.display());
-        
+
         // Load compliance profile for Unity
         let compliance_profile = Self::load_compliance_profile();
-        
+
         // Check if file exists and is readable
         if !path.exists() {
             bail!("File does not exist: {}", path.display());
         }
-        
-        let file_data = std::fs::read(path)
-            .context("Failed to read Unity archive file")?;
-        
+
+        let file_data = std::fs::read(path).context("Failed to read Unity archive file")?;
+
         // Determine file type and parse
         let (bundle, serialized_file) = Self::parse_unity_file(&file_data)?;
-        
+
         // Generate provenance
         let provenance = Self::create_provenance(path, &compliance_profile)?;
-        
+
         // Extract entry metadata
         let entries = Self::extract_entries(&bundle, &serialized_file)?;
-        
+
         info!("Loaded Unity archive with {} entries", entries.len());
-        
+
         Ok(Self {
             file_path: path.to_path_buf(),
             bundle,
@@ -138,7 +138,7 @@ impl UnityArchive {
             entries,
         })
     }
-    
+
     /// Load compliance profile for Unity
     fn load_compliance_profile() -> ComplianceProfile {
         // In a real implementation, this would load from the compliance registry
@@ -149,24 +149,34 @@ impl UnityArchive {
             official_support: false,
             bounty_eligible: true,
             enterprise_warning: Some(
-                "Unity games have varying IP policies. Check publisher-specific compliance.".to_string()
+                "Unity games have varying IP policies. Check publisher-specific compliance."
+                    .to_string(),
             ),
             mod_policy_url: None,
             supported_formats: {
                 let mut formats = HashMap::new();
-                formats.insert("unity3d".to_string(), aegis_core::FormatSupport::CommunityOnly);
-                formats.insert("assets".to_string(), aegis_core::FormatSupport::CommunityOnly);
-                formats.insert("resource".to_string(), aegis_core::FormatSupport::CommunityOnly);
+                formats.insert(
+                    "unity3d".to_string(),
+                    aegis_core::FormatSupport::CommunityOnly,
+                );
+                formats.insert(
+                    "assets".to_string(),
+                    aegis_core::FormatSupport::CommunityOnly,
+                );
+                formats.insert(
+                    "resource".to_string(),
+                    aegis_core::FormatSupport::CommunityOnly,
+                );
                 formats
             },
         }
     }
-    
+
     /// Create provenance information
     fn create_provenance(path: &Path, profile: &ComplianceProfile) -> Result<Provenance> {
         let source_data = std::fs::read(path)?;
         let source_hash = blake3::hash(&source_data).to_hex().to_string();
-        
+
         Ok(Provenance {
             session_id: uuid::Uuid::new_v4(),
             game_id: Some("unity_generic".to_string()),
@@ -183,7 +193,7 @@ impl UnityArchive {
             },
         })
     }
-    
+
     /// Parse Unity file format
     fn parse_unity_file(data: &[u8]) -> Result<(Option<AssetBundle>, Option<SerializedFile>)> {
         if data.starts_with(b"UnityFS\0") {
@@ -200,14 +210,14 @@ impl UnityArchive {
             bail!("Unsupported Unity file format");
         }
     }
-    
+
     /// Extract entry metadata from parsed structures
     fn extract_entries(
         bundle: &Option<AssetBundle>,
         serialized_file: &Option<SerializedFile>,
     ) -> Result<Vec<EntryMetadata>> {
         let mut entries = Vec::new();
-        
+
         if let Some(bundle) = bundle {
             for (i, block) in bundle.directory_info.iter().enumerate() {
                 entries.push(EntryMetadata {
@@ -222,13 +232,15 @@ impl UnityArchive {
                 });
             }
         }
-        
+
         if let Some(serialized) = serialized_file {
             for (i, object) in serialized.objects.iter().enumerate() {
-                let type_name = serialized.type_tree.get(&object.class_id)
+                let type_name = serialized
+                    .type_tree
+                    .get(&object.class_id)
                     .map(|t| t.type_name.clone())
                     .unwrap_or_else(|| format!("Type_{}", object.class_id));
-                
+
                 entries.push(EntryMetadata {
                     id: EntryId::new(format!("object_{}", object.path_id)),
                     name: format!("{}_{}", type_name, object.path_id),
@@ -241,7 +253,7 @@ impl UnityArchive {
                 });
             }
         }
-        
+
         Ok(entries)
     }
 }
@@ -250,57 +262,61 @@ impl ArchiveHandler for UnityArchive {
     fn detect(bytes: &[u8]) -> bool {
         UnityArchive::detect(bytes)
     }
-    
+
     fn open(path: &Path) -> Result<Self> {
         UnityArchive::open(path)
     }
-    
+
     fn compliance_profile(&self) -> &ComplianceProfile {
         &self.compliance_profile
     }
-    
+
     fn list_entries(&self) -> Result<Vec<EntryMetadata>> {
         Ok(self.entries.clone())
     }
-    
+
     fn read_entry(&self, id: &EntryId) -> Result<Vec<u8>> {
         debug!("Reading entry: {}", id.0);
-        
+
         // Find the entry
-        let entry = self.entries.iter()
+        let entry = self
+            .entries
+            .iter()
             .find(|e| e.id == *id)
             .ok_or_else(|| anyhow::anyhow!("Entry not found: {}", id.0))?;
-        
+
         // Extract data based on entry type
         if let Some(ref bundle) = self.bundle {
             if id.0.starts_with("block_") {
-                let block_index: usize = id.0.strip_prefix("block_")
-                    .unwrap()
-                    .parse()
-                    .context("Invalid block index")?;
-                
+                let block_index: usize =
+                    id.0.strip_prefix("block_")
+                        .unwrap()
+                        .parse()
+                        .context("Invalid block index")?;
+
                 if block_index < bundle.directory_info.len() {
                     return self.extract_bundle_block(&bundle.directory_info[block_index]);
                 }
             }
         }
-        
+
         if let Some(ref serialized) = self.serialized_file {
             if id.0.starts_with("object_") {
-                let path_id: u64 = id.0.strip_prefix("object_")
-                    .unwrap()
-                    .parse()
-                    .context("Invalid path ID")?;
-                
+                let path_id: u64 =
+                    id.0.strip_prefix("object_")
+                        .unwrap()
+                        .parse()
+                        .context("Invalid path ID")?;
+
                 if let Some(object) = serialized.objects.iter().find(|o| o.path_id == path_id) {
                     return self.extract_serialized_object(object, serialized);
                 }
             }
         }
-        
+
         bail!("Entry not found or unsupported: {}", id.0)
     }
-    
+
     fn provenance(&self) -> &Provenance {
         &self.provenance
     }
@@ -310,16 +326,16 @@ impl UnityArchive {
     /// Extract data from a bundle block
     fn extract_bundle_block(&self, block: &formats::DirectoryInfo) -> Result<Vec<u8>> {
         let file_data = std::fs::read(&self.file_path)?;
-        
+
         let start = block.offset as usize;
         let end = start + block.compressed_size as usize;
-        
+
         if end > file_data.len() {
             bail!("Block extends beyond file boundaries");
         }
-        
+
         let compressed_data = &file_data[start..end];
-        
+
         match block.compression_type {
             0 => Ok(compressed_data.to_vec()), // No compression
             1 => bail!("LZMA compression not yet implemented"),
@@ -329,7 +345,7 @@ impl UnityArchive {
             _ => bail!("Unknown compression type: {}", block.compression_type),
         }
     }
-    
+
     /// Extract data from a serialized object
     fn extract_serialized_object(
         &self,
@@ -337,14 +353,14 @@ impl UnityArchive {
         _serialized: &SerializedFile,
     ) -> Result<Vec<u8>> {
         let file_data = std::fs::read(&self.file_path)?;
-        
+
         let start = object.offset as usize;
         let end = start + object.size as usize;
-        
+
         if end > file_data.len() {
             bail!("Object extends beyond file boundaries");
         }
-        
+
         Ok(file_data[start..end].to_vec())
     }
 }
@@ -352,30 +368,30 @@ impl UnityArchive {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_unity_detection() {
         // Test UnityFS detection
         let unityfs_header = b"UnityFS\0\x07\x05\x00\x00";
         assert!(UnityArchive::detect(unityfs_header));
-        
+
         // Test UnityRaw detection
         let unityraw_header = b"UnityRaw\x00\x00\x00\x00";
         assert!(UnityArchive::detect(unityraw_header));
-        
+
         // Test invalid header
         let invalid_header = b"Invalid\0\x00\x00\x00";
         assert!(!UnityArchive::detect(invalid_header));
     }
-    
+
     #[test]
     fn test_plugin_factory() {
         let factory = UnityPluginFactory;
-        
+
         assert_eq!(factory.name(), "Unity");
         assert!(factory.supported_extensions().contains(&"unity3d"));
         assert!(factory.supported_extensions().contains(&"assets"));
-        
+
         let info = factory.compliance_info();
         assert_eq!(info.name, "Unity");
         assert!(info.compliance_verified);

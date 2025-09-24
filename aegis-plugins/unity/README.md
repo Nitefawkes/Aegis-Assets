@@ -60,23 +60,9 @@ aegis extract game.unity3d --filter "*.png,*.gltf" --plugin unity
 aegis extract game.unity3d --compliance-check --plugin unity
 ```
 
-### Python API
-```python
-from aegis import UnityPlugin
+### Python API (planned)
 
-# Open Unity file
-plugin = UnityPlugin()
-archive = plugin.open("sharedassets0.assets")
-
-# List available assets
-for entry in archive.list_entries():
-    print(f"{entry.name} ({entry.file_type}) - {entry.size_uncompressed} bytes")
-
-# Extract and convert specific asset
-texture_data = archive.read_converted_entry("Texture2D_12345")
-with open("texture.png", "wb") as f:
-    f.write(texture_data)
-```
+The Unity plugin does not yet expose a functional Python interface. The `aegis-python` crate currently contains placeholder bindings while we design a safe API surface. For now, use the Rust CLI or library interfaces.
 
 ### Rust API
 ```rust

@@ -42,8 +42,8 @@
 
 #### ✅ **Documentation & Examples**
 - **Plugin README**: Complete documentation with usage examples
-- **Python Example Script**: Practical demonstration of Unity asset extraction
-- **API Documentation**: Rust and Python API examples
+- **Python Example Script**: _Planned; pending functional bindings_
+- **API Documentation**: Rust examples available (Python API pending)
 - **Troubleshooting Guide**: Common issues and solutions
 
 ### 🏗️ Technical Architecture Completed
@@ -100,7 +100,7 @@ The Unity plugin can now:
 - **Extensible**: Easy to add new Unity versions and asset types
 
 ### ✅ **Developer Experience**
-- **Clear APIs**: Both Rust and Python interfaces available
+- **Clear APIs**: Rust interface available; Python bindings still experimental
 - **Rich Documentation**: Complete guides and examples
 - **Testing Tools**: Automated validation and benchmarking
 - **Build Automation**: One-command build and test pipeline

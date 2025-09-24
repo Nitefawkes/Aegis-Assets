@@ -35,8 +35,8 @@ Aegis-Assets is built on a **compliance-first architecture**. That means we **do
 ### ✅ **Core Engine (Implemented)**
 * ⚡ **Rust Core Engine** → high-performance, memory-safe, parallel extraction
 * 🔌 **Plugin Architecture** → Unity and Unreal Engine plugins with extensible format support
-* 📦 **Asset Database** → SQLite-based storage with full-text search and metadata indexing
-* 🔍 **Smart Search** → relevance scoring, tag filtering, type-based queries
+* 📦 **Asset Index** → JSON-backed catalog with metadata snapshots
+* 🔍 **Smart Search** → structured filtering over the JSON index (SQLite/FTS backend planned)
 * 🌐 **REST API** → complete HTTP API with JSON responses for programmatic access
 * 🎨 **Web Dashboard** → modern, responsive browser interface for asset management
 
@@ -67,7 +67,7 @@ This stance is not a weakness — it's our **category-defining advantage**.
 * ✅ Unity & Unreal baseline support
 * ✅ Core extraction pipeline with asset conversion
 * ✅ REST API and web dashboard
-* ✅ Asset database with search capabilities
+* 🚧 Asset indexing & search (JSON-backed today; SQLite backend pending)
 * 🚧 Patch recipes (in development)
 * ✅ Compliance manifesto published
 
@@ -117,6 +117,10 @@ cargo build --release
 ./target/release/aegis db search "texture" --asset-type Texture
 ./target/release/aegis db stats
 ```
+
+### ⚠️ Python bindings status
+
+The `aegis-python` crate currently provides a stub PyO3 module. Functional bindings for configuring and running extractions from Python are still in development, so all workflows should use the Rust CLI or core library for the time being.
 
 ### 🌐 **Web Dashboard**
 

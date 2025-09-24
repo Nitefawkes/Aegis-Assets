@@ -1,4 +1,4 @@
-use anyhow::{Result, Context, bail};
+use anyhow::{bail, Context, Result};
 use tracing::warn;
 
 /// Decompress LZ4 compressed data
@@ -83,20 +83,38 @@ pub fn decompress_unity_data(
         }
         _ => {
             // Graceful fallback for unknown compression types
-            warn!("Unknown Unity compression type: {} - attempting fallback", compression_type);
+            warn!(
+                "Unknown Unity compression type: {} - validating data size before attempting fallback",
+                compression_type
+            );
 
             // Try to return the raw data if it matches expected size (some games may use uncompressed data with unknown type flags)
             if compressed.len() == expected_size {
-                warn!("Compression type {} unknown, but data size matches expected size - returning raw data", compression_type);
+                warn!(
+                    "Compression type {} unknown, but data size matches expected size - returning raw data",
+                    compression_type
+                );
                 Ok(compressed.to_vec())
             } else if compressed.len() > expected_size {
-                // Data might be compressed with unknown algorithm - return empty with warning
-                warn!("Compression type {} unknown and data appears compressed ({} bytes vs expected {} bytes) - skipping compressed block",
-                      compression_type, compressed.len(), expected_size);
-                Ok(Vec::new())
+                warn!(
+                    "Compression type {} unknown and data appears compressed ({} bytes vs expected {} bytes) - cannot decode block",
+                    compression_type,
+                    compressed.len(),
+                    expected_size
+                );
+                bail!(
+                    "Unknown compression type {} produced mismatched size: {} bytes vs expected {} bytes",
+                    compression_type,
+                    compressed.len(),
+                    expected_size
+                );
             } else {
-                warn!("Compression type {} unknown - data size mismatch ({} vs expected {}) - returning available data",
-                      compression_type, compressed.len(), expected_size);
+                warn!(
+                    "Compression type {} unknown - data size mismatch ({} vs expected {}) - returning available data",
+                    compression_type,
+                    compressed.len(),
+                    expected_size
+                );
                 Ok(compressed.to_vec())
             }
         }
@@ -235,9 +253,27 @@ mod tests {
         // Test uncompressed detection
         let uncompressed = b"Hello World";
         assert_eq!(detect_compression_type(uncompressed), Some(0));
-        
+
         // Test short data
         let short_data = b"Hi";
         assert_eq!(detect_compression_type(short_data), None);
+    }
+
+    #[test]
+    fn test_unknown_compression_with_mismatched_size_errors() {
+        let compressed = vec![0u8; 32];
+        let result = decompress_unity_data(&compressed, 99, 16);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Unknown compression type"));
+    }
+
+    #[test]
+    fn test_unknown_compression_with_matching_size_returns_data() {
+        let compressed = vec![1u8; 8];
+        let result = decompress_unity_data(&compressed, 99, compressed.len()).unwrap();
+        assert_eq!(result, compressed);
     }
 }

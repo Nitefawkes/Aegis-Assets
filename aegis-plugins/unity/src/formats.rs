@@ -1,8 +1,9 @@
-use anyhow::{Result, Context, bail};
+use anyhow::{bail, Context, Result};
 use byteorder::{BigEndian, LittleEndian, ReadBytesExt};
 use std::collections::HashMap;
 use std::io::{Cursor, Read, Seek, SeekFrom};
 use crate::compression::decompress_unity_data;
+use tracing::warn;
 
 /// Unity engine version information
 #[derive(Debug, Clone)]
@@ -200,7 +201,19 @@ impl AssetBundle {
         
         // Decompress if needed
         let decompressed_data = if compression_type > 0 {
-            decompress_unity_data(&compressed_data, compression_type, uncompressed_size as usize)?
+            match decompress_unity_data(&compressed_data, compression_type, uncompressed_size as usize) {
+                Ok(data) => data,
+                Err(err) => {
+                    warn!(
+                        compression_type = compression_type,
+                        expected_size = uncompressed_size,
+                        actual_size = compressed_data.len(),
+                        error = %err,
+                        "Failed to decompress Unity block metadata"
+                    );
+                    return Err(err);
+                }
+            }
         } else {
             compressed_data
         };
@@ -262,7 +275,24 @@ impl AssetBundle {
         let compressed_data = &source_data[start_offset as usize..end_offset as usize];
         
         if entry.compression_type > 0 {
-            decompress_unity_data(compressed_data, entry.compression_type, entry.size as usize)
+            match decompress_unity_data(
+                compressed_data,
+                entry.compression_type,
+                entry.size as usize,
+            ) {
+                Ok(data) => Ok(data),
+                Err(err) => {
+                    warn!(
+                        compression_type = entry.compression_type,
+                        entry_name = %entry.name,
+                        expected_size = entry.size,
+                        actual_size = compressed_data.len(),
+                        error = %err,
+                        "Failed to decompress Unity directory entry"
+                    );
+                    Err(err)
+                }
+            }
         } else {
             Ok(compressed_data.to_vec())
         }

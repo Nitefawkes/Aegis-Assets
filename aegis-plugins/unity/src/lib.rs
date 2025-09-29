@@ -594,12 +594,31 @@ impl UnityArchive {
 
         if end > self.data.len() {
             bail!("Block extends beyond file boundaries");
-        }
+codex/handle-unknown-compression-type-error
+        
+        let compressed_data = &file_data[start..end];
 
         let compressed_data = &self.data[start..end];
+master
 
         // Use the unified decompression function
-        decompress_unity_data(compressed_data, block.compression_type, block.size as usize)
+        let result = decompress_unity_data(
+            compressed_data,
+            block.compression_type,
+            block.size as usize,
+        );
+
+        if let Err(ref err) = result {
+            warn!(
+                compression_type = block.compression_type,
+                expected_size = block.size,
+                actual_size = compressed_data.len(),
+                error = %err,
+                "Failed to decompress Unity bundle block"
+            );
+        }
+
+        result
     }
 
     /// Extract data from a serialized object
@@ -677,6 +696,18 @@ mod tests {
     #[test]
     fn test_unity_detection() {
         // Test UnityFS detection
+codex/handle-unknown-compression-type-error
+        let unityfs_header = [
+            b'U', b'n', b'i', b't', b'y', b'F', b'S', 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        assert!(UnityArchive::detect(&unityfs_header));
+
+        // Test UnityRaw detection
+        let unityraw_header = [
+            b'U', b'n', b'i', b't', b'y', b'R', b'a', b'w', 0, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        assert!(UnityArchive::detect(&unityraw_header));
+        
         let unityfs_header = b"UnityFS\0\x07\x05\x00\x00";
         assert!(UnityArchive::detect(unityfs_header));
 
@@ -684,6 +715,7 @@ mod tests {
         let unityraw_header = b"UnityRaw\x00\x00\x00\x00";
         assert!(UnityArchive::detect(unityraw_header));
 
+master
         // Test invalid header
         let invalid_header = b"Invalid\0\x00\x00\x00";
         assert!(!UnityArchive::detect(invalid_header));

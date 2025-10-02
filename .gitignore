@@ -88,3 +88,6 @@ __pycache__/
 
 # Rust cache
 .cargo/
+
+# Cursor AI metadata
+.specstory/

@@ -4,7 +4,10 @@ use aegis_core::{
 };
 use anyhow::{bail, Context, Result};
 use byteorder::{LittleEndian, ReadBytesExt};
+use memmap2::{Mmap, MmapOptions};
 use std::collections::HashMap;
+use std::convert::TryFrom;
+use std::fs::File;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use tracing::{debug, info, warn};
@@ -69,9 +72,10 @@ impl PluginFactory for UnityPluginFactory {
     }
 }
 
-/// Unity archive handler
+/// Unity archive handler backed by a shared memory map for streaming access
 pub struct UnityArchive {
     file_path: PathBuf,
+    data: Mmap,
     bundle: Option<AssetBundle>,
     serialized_file: Option<SerializedFile>,
     compliance_profile: ComplianceProfile,
@@ -141,15 +145,16 @@ impl UnityArchive {
         if !path.exists() {
             bail!("File does not exist: {}", path.display());
         }
-
-        let file_data = std::fs::read(path).context("Failed to read Unity archive file")?;
-
+        
+        let file_data = std::fs::read(path)
+            .context("Failed to read Unity archive file")?;
+        
         // Determine file type and parse
         let (bundle, serialized_file) = Self::parse_unity_file(&file_data)?;
-
+        
         // Generate provenance
         let provenance = Self::create_provenance(path, &compliance_profile)?;
-
+        
         // Extract entry metadata
         let entries = Self::extract_entries(&bundle, &serialized_file)?;
 
@@ -157,6 +162,7 @@ impl UnityArchive {
 
         Ok(Self {
             file_path: path.to_path_buf(),
+            data,
             bundle,
             serialized_file,
             compliance_profile,
@@ -204,7 +210,7 @@ impl UnityArchive {
     fn create_provenance(path: &Path, profile: &ComplianceProfile) -> Result<Provenance> {
         let source_data = std::fs::read(path)?;
         let source_hash = blake3::hash(&source_data).to_hex().to_string();
-
+        
         Ok(Provenance {
             session_id: uuid::Uuid::new_v4(),
             game_id: Some("unity_generic".to_string()),
@@ -573,18 +579,34 @@ impl UnityArchive {
     /// Extract data from a bundle block
     fn extract_bundle_block(&self, block: &formats::DirectoryInfo) -> Result<Vec<u8>> {
         let file_data = std::fs::read(&self.file_path)?;
-
+        
         let start = block.offset as usize;
         let end = start + block.compressed_size as usize;
-
+        
         if end > file_data.len() {
             bail!("Block extends beyond file boundaries");
         }
-
+        
         let compressed_data = &file_data[start..end];
-
+        
         // Use the unified decompression function
-        decompress_unity_data(compressed_data, block.compression_type, block.size as usize)
+        let result = decompress_unity_data(
+            compressed_data,
+            block.compression_type,
+            block.size as usize,
+        );
+
+        if let Err(ref err) = result {
+            warn!(
+                compression_type = block.compression_type,
+                expected_size = block.size,
+                actual_size = compressed_data.len(),
+                error = %err,
+                "Failed to decompress Unity bundle block"
+            );
+        }
+
+        result
     }
 
     /// Extract data from a serialized object
@@ -594,14 +616,14 @@ impl UnityArchive {
         _serialized: &SerializedFile,
     ) -> Result<Vec<u8>> {
         let file_data = std::fs::read(&self.file_path)?;
-
+        
         let start = object.offset as usize;
         let end = start + object.size as usize;
-
+        
         if end > file_data.len() {
             bail!("Object extends beyond file boundaries");
         }
-
+        
         Ok(file_data[start..end].to_vec())
     }
 
@@ -622,6 +644,45 @@ impl UnityArchive {
                         .context("Invalid path ID")?;
 
                 if let Some(object) = serialized.objects.iter().find(|o| o.path_id == path_id) {
+                    // Special handling for AudioClip to use enhanced audio pipeline
+                    if object.class_id == 83 { // AudioClip
+                        match UnityAudioClip::parse(&raw_data) {
+                            Ok(clip) => {
+                                match convert_unity_audio_clip(&clip, &self.audio_options) {
+                                    Ok(result) => {
+                                        info!(
+                                            "Audio pipeline produced {} ({})",
+                                            result.primary.filename,
+                                            result.stats
+                                        );
+                                        if let Some(ref secondary) = result.secondary {
+                                            info!(
+                                                "Audio secondary artifact available: {} ({} bytes)",
+                                                secondary.filename,
+                                                secondary.bytes.len()
+                                            );
+                                        }
+                                        if let Some(ref loop_meta) = result.loop_metadata {
+                                            info!("Audio loop metadata: {}", loop_meta);
+                                        }
+                                        info!("Audio validation: {}", result.validation);
+                                        for warning in &result.warnings {
+                                            warn!("Audio conversion warning: {}", warning);
+                                        }
+                                        return Ok((result.primary.filename, result.primary.bytes));
+                                    }
+                                    Err(e) => {
+                                        warn!("Audio pipeline failed for {}: {}. Returning raw data.", id.0, e);
+                                        return Ok((format!("{}.bin", id.0), raw_data));
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                warn!("Failed to parse AudioClip {}: {}. Falling back to generic converter.", id.0, e);
+                            }
+                        }
+                    }
+                    
                     // Try to convert the asset
                     match convert_unity_asset(object.class_id, &raw_data) {
                         Ok((filename, converted_data)) => {
@@ -629,44 +690,8 @@ impl UnityArchive {
                             return Ok((filename, converted_data));
                         }
                         Err(e) => {
-                            warn!(
-                                "Failed to convert asset {}: {}. Returning raw data.",
-                                id.0, e
-                            );
-                            if object.class_id == 43 {
-                                let mesh = UnityMesh::parse(&raw_data)?;
-                                let result = convert_unity_mesh(&mesh, &self.mesh_options)?;
-                                info!(
-                                    "Mesh pipeline produced {} ({})",
-                                    result.primary.filename,
-                                    result.stats
-                                );
-                                return Ok((result.primary.filename, result.primary.bytes));
-                            } else if object.class_id == 83 {
-                                let clip = UnityAudioClip::parse(&raw_data)?;
-                                let result = convert_unity_audio_clip(&clip, &self.audio_options)?;
-                                info!(
-                                    "Audio pipeline produced {} ({})",
-                                    result.primary.filename,
-                                    result.stats
-                                );
-                                if let Some(ref secondary) = result.secondary {
-                                    info!(
-                                        "Audio secondary artifact available: {} ({} bytes)",
-                                        secondary.filename,
-                                        secondary.bytes.len()
-                                    );
-                                }
-                                if let Some(ref loop_meta) = result.loop_metadata {
-                                    info!("Audio loop metadata: {}", loop_meta);
-                                }
-                                info!("Audio validation: {}", result.validation);
-                                for warning in &result.warnings {
-                                    warn!("Audio conversion warning: {}", warning);
-                                }
-                                return Ok((result.primary.filename, result.primary.bytes));
-                            }
-
+                            warn!("Failed to convert asset {}: {}. Returning raw data.", id.0, e);
+                            // Fall back to raw data with .bin extension
                             return Ok((format!("{}.bin", id.0), raw_data));
                         }
                     }
@@ -679,6 +704,12 @@ impl UnityArchive {
     }
 }
 
+impl Drop for UnityArchive {
+    fn drop(&mut self) {
+        debug!("Closing Unity archive: {}", self.file_path.display());
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -686,13 +717,25 @@ mod tests {
     #[test]
     fn test_unity_detection() {
         // Test UnityFS detection
+codex/handle-unknown-compression-type-error
+        let unityfs_header = [
+            b'U', b'n', b'i', b't', b'y', b'F', b'S', 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        assert!(UnityArchive::detect(&unityfs_header));
+
+        // Test UnityRaw detection
+        let unityraw_header = [
+            b'U', b'n', b'i', b't', b'y', b'R', b'a', b'w', 0, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        assert!(UnityArchive::detect(&unityraw_header));
+        
         let unityfs_header = b"UnityFS\0\x07\x05\x00\x00";
         assert!(UnityArchive::detect(unityfs_header));
 
         // Test UnityRaw detection
         let unityraw_header = b"UnityRaw\x00\x00\x00\x00";
         assert!(UnityArchive::detect(unityraw_header));
-
+        
         // Test invalid header
         let invalid_header = b"Invalid\0\x00\x00\x00";
         assert!(!UnityArchive::detect(invalid_header));

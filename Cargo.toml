@@ -41,6 +41,7 @@ nom = "7.1"
 gltf-json = "1.4"
 image = { version = "0.24", features = ["png", "jpeg"] }
 basis-universal = "0.3"
+bcdec_rs = "0.2"
 
 # Compression
 flate2 = "1.0"

@@ -87,13 +87,13 @@ pub const GIT_HASH: &str = match option_env!("VERGEN_GIT_SHA") {
 /// Initialize the Aegis-Core library with logging and telemetry
 pub fn init() -> Result<()> {
     // Initialize tracing subscriber for structured logging
-    tracing_subscriber::fmt()
+    let _ = tracing_subscriber::fmt()
         .with_env_filter("aegis_core=info,aegis_plugins=info")
         .with_target(false)
         .with_thread_ids(true)
         .with_file(true)
         .with_line_number(true)
-        .init();
+        .try_init();
 
     info!("Initializing Aegis-Assets Core v{}", VERSION);
     info!("Git commit: {}", GIT_HASH);

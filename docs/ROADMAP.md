@@ -21,8 +21,8 @@ As of **September 2025**, Aegis-Assets has completed its foundational phase and 
 - ✅ **Asset Conversion** - PNG textures, glTF meshes, standard format exports
 
 ### 📊 **Data Management**
-- ✅ **Asset Database** - SQLite-based storage with full metadata
-- ✅ **Search Engine** - Full-text search with relevance scoring and filtering
+- ✅ **Asset Index** - JSON-backed catalog with stored metadata
+- 🚧 **Search Engine** - JSON filtering available; SQLite/FTS backend pending
 - ✅ **REST API** - Complete HTTP API for programmatic access
 - ✅ **Web Dashboard** - Modern browser interface for asset management
 

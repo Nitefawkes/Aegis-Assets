@@ -1,9 +1,10 @@
 #[cfg(test)]
 mod integration_tests {
-    use super::*;
-    use std::path::Path;
-    use tempfile::NamedTempFile;
+    use aegis_core::{archive::ArchiveHandler, PluginFactory};
+    use anyhow::Result;
+    use crate::{UnityArchive, UnityPluginFactory};
     use std::io::Write;
+    use tempfile::NamedTempFile;
 
     /// Create a minimal Unity file for testing
     fn create_test_unity_file() -> Result<NamedTempFile> {
@@ -54,8 +55,10 @@ mod integration_tests {
     #[test]
     fn test_unity_format_detection() {
         // Test UnityFS detection
-        let unityfs_header = b"UnityFS\0\x07\x05\x00\x00\x01\x02\x03";
-        assert!(UnityArchive::detect(unityfs_header));
+        let unityfs_header = [
+            b'U', b'n', b'i', b't', b'y', b'F', b'S', 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        assert!(UnityArchive::detect(&unityfs_header));
         
         // Test invalid header
         let invalid_header = b"Invalid\0\x00\x00\x00\x00\x00\x00\x00";

@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+<<<<<<< HEAD
 ### Added
 - **Unity Plugin — Audio Pipeline (Sprint 3)**
   - FSB4/FSB5 container parsing with loop metadata extraction
@@ -19,14 +20,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - WAV encoder supporting 8/16/24/32-bit PCM output
   - Unit tests for audio pipeline options, stats, loop metadata, and coefficient extraction
   - Modular `audio_pipeline.rs` and `firelight_adpcm.rs` modules
+=======
+### Changed
+- Unity plugin now streams archive data from a shared memory map to avoid redundant allocations and prepare for parallel extraction.
+
+### Added
+- Streaming benchmark example and documentation to help other plugins adopt memory-mapped I/O patterns.
+>>>>>>> 84423c8fd9c4bc46e267dc9a2aa9304a215b347d
 
 ## [0.2.0] - 2025-09-15
 
 ### 🚀 Major Features Added
 
 #### **Asset Database & Search System**
-- Complete SQLite-based asset database with metadata storage
-- Full-text search with relevance scoring and ranking
+- Introduced JSON-backed asset index with metadata storage (SQLite backend pending)
+- Keyword and field filtering over the JSON index
 - Asset type filtering (Texture, Mesh, Audio, Material, Level, etc.)
 - Tag-based organization and categorization
 - Game ID association for multi-project management
@@ -118,7 +126,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial implementation of Aegis-Assets compliance-first extraction platform
 - Core Rust library with plugin architecture
 - Unity plugin with basic format detection and extraction
-- Python bindings via PyO3
+- Python bindings via PyO3 (stub module; functionality pending)
 - Command-line interface with extract, recipe, and compliance commands
 - Compliance framework with publisher risk profiles
 - Patch recipe system for legal asset distribution

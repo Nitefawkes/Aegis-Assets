@@ -28,6 +28,7 @@ dependencies = [
  "blake3",
  "chrono",
  "clap",
+ "colored",
  "console",
  "indicatif",
  "serde",
@@ -47,6 +48,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "bcdec_rs",
  "blake3",
  "byteorder",
  "chrono",
@@ -56,6 +58,7 @@ dependencies = [
  "gltf-json",
  "hyper",
  "image",
+ "libc",
  "lz4_flex",
  "memmap2",
  "nom",
@@ -78,6 +81,7 @@ dependencies = [
  "tracing-subscriber",
  "uuid",
  "walkdir",
+ "windows-sys 0.52.0",
  "xz2",
 ]
 
@@ -109,6 +113,7 @@ dependencies = [
  "image",
  "lz4_flex",
  "lzma-rs",
+ "memmap2",
  "nom",
  "serde",
  "serde_json",
@@ -367,6 +372,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
+name = "bcdec_rs"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f09c37bc0e9f0924b7dae9988265ef3c76c88538f41a3b06caf4bed07cee5226"
+
+[[package]]
 name = "bit-set"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -560,6 +571,16 @@ name = "colorchoice"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b05b61dc5112cbb17e4b6cd61790d9845d13888356391624cbe7e41efeac1e75"
+
+[[package]]
+name = "colored"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "117725a109d387c937a1533ce01b450cbde6b88abceea8473c4d7a85853cda3c"
+dependencies = [
+ "lazy_static",
+ "windows-sys 0.59.0",
+]
 
 [[package]]
 name = "console"
@@ -2562,6 +2583,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "56e6c93f3a0c3b36176cb1327a4958a0353d5d166c2a35cb268ace15e91d3b57"
 dependencies = [
  "windows-link",
+]
+
+[[package]]
+name = "windows-sys"
+version = "0.52.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "282be5f36a8ce781fad8c8ae18fa3f9beff57ec1b52cb3de0789201425d9a33d"
+dependencies = [
+ "windows-targets 0.52.6",
 ]
 
 [[package]]

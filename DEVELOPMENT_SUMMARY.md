@@ -4,7 +4,7 @@
 
 ### Core Architecture ✅ Complete
 - **aegis-core**: Rust library with compliance-first extraction engine
-- **aegis-python**: Python bindings via PyO3 for cross-language support  
+- **aegis-python**: Experimental PyO3 module (currently stub; bindings pending)
 - **aegis-cli**: Full-featured command-line interface
 - **Plugin system**: Extensible architecture with Unity plugin implemented
 
@@ -33,7 +33,7 @@
 - [x] Unity plugin (functional but basic)
 - [x] Compliance framework
 - [x] CLI interface
-- [x] Python bindings
+- [ ] Python bindings (current module is a stub)
 - [x] Documentation
 - [x] CI/CD pipeline
 - [ ] Unity plugin refinement (stub implementation needs full format support)

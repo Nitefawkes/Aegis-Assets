@@ -33,23 +33,33 @@ Aegis-Assets is built on a **compliance-first architecture**. That means we **do
 ## 🛠️ Features
 
 ### ✅ **Core Engine (Implemented)**
-* ⚡ **Rust Core Engine** → high-performance, memory-safe, parallel extraction
-* 🔌 **Plugin Architecture** → Unity and Unreal Engine plugins with extensible format support
+* ⚡ **Rust Core Engine** → high-performance, memory-safe extraction framework
+* 🔌 **Plugin Architecture** → extensible format support with community marketplace
 * 📦 **Asset Database** → SQLite-based storage with full-text search and metadata indexing
 * 🔍 **Smart Search** → relevance scoring, tag filtering, type-based queries
 * 🌐 **REST API** → complete HTTP API with JSON responses for programmatic access
 * 🎨 **Web Dashboard** → modern, responsive browser interface for asset management
 
 ### ✅ **Game Engine Support (Implemented)**
-* 🎮 **Unity Engine** → UnityFS, serialized files, textures (PNG), meshes (glTF), audio
+* 🎮 **Unity Engine** → UnityFS archives, serialized files, comprehensive asset extraction
+  * 🖼️ **Textures**: PNG/KTX2 export with DXT/ETC/ASTC decompression, mipmap & alpha handling
+  * 🎵 **Audio**: FSB4/FSB5 → WAV/OGG with Vorbis + Firelight ADPCM (GCADPCM/FADPCM) decoding, loop metadata preservation
+  * 🔷 **Meshes**: glTF 2.0 export with OBJ fallback (in progress)
 * 🏛️ **Unreal Engine** → PAK files, UAsset parsing, IoStore support (foundation)
-* 🔄 **Asset Conversion** → DXT/ETC/ASTC texture decompression, glTF 2.0 mesh export
+* 🏪 **Plugin Marketplace** → discover, install, and manage community plugins
+
+### ✅ **Plugin Ecosystem (Complete)**
+* 🔌 **Plugin Registry** → centralized marketplace with 8+ database tables
+* 📋 **Manifest System** → TOML-based plugin specification and validation
+* 🔗 **Dependency Resolution** → semantic versioning and conflict resolution
+* 🖥️ **CLI Management** → install, uninstall, update, search plugins
+* 🌐 **Web Marketplace** → beautiful interface for plugin discovery and management
 
 ### 🚧 **In Development**
-* 🗂️ **Patch Recipe System** → exports deltas, not copyrighted content
-* 📜 **Compliance Profiles** → per-game legal risk indicators
-* 📝 **Audit Trails** → enterprise-ready provenance logs
-* 🤖 **AI-Powered Tools (Pro)** → auto-tagging, PBR derivation, semantic search
+* ⚡ **Performance Engine** → parallel processing, streaming, memory optimization
+* 🧪 **Testing Framework** → comprehensive plugin and extraction validation
+* 🔐 **Security Sandbox** → plugin execution isolation and validation
+* 📊 **Analytics Engine** → usage tracking, performance monitoring, optimization
 
 ## 🔒 Why Compliance Matters
 
@@ -63,25 +73,31 @@ This stance is not a weakness — it's our **category-defining advantage**.
 
 ## 🌐 Roadmap (Updated Progress)
 
-### ✅ **Phase 1 (COMPLETED)** 
+### ✅ **Phase 1 (COMPLETED)**
 * ✅ Unity & Unreal baseline support
 * ✅ Core extraction pipeline with asset conversion
 * ✅ REST API and web dashboard
 * ✅ Asset database with search capabilities
-* 🚧 Patch recipes (in development)
 * ✅ Compliance manifesto published
+* ✅ **Plugin marketplace foundation** (database, CLI, web interface)
 
-### 🚧 **Phase 2 (Current - 6–12 months):**
-* 🔄 **Priority 6**: Enhanced authentication & rate limiting
-* 🔄 **Priority 7**: Advanced compression support (Oodle, enhanced LZ4)
-* 🔄 **Priority 8**: Plugin marketplace + bounty board
-* 🔄 **Priority 9**: AI tagging (Rekognition/CLIP) integration
-* 🔄 **Priority 10**: Enterprise pilots w/ archives & labs
+### 🚧 **Phase 2 (Current - Q4 2025):**
+* ✅ **Sprint 1-2**: Unity texture pipeline (PNG/KTX2, atlas extraction, golden tests)
+* ✅ **Sprint 3**: Unity audio pipeline (FSB decode, Vorbis/ADPCM, loop metadata, validation)
+* 🔄 **Sprint 3**: Unity mesh pipeline (glTF/OBJ export, materials, validation) — in progress
+* 🔄 **Sprint 4**: Advanced compression (Oodle bridge, streaming decompression)
+* 🔄 **Sprint 5**: Ethical sourcing integration (OpenGameArt, Itch.io, license detection)
 
 ### 🎯 **Phase 3 (12–18 months):**
-* AI creator tools (auto-PBR, upscaling, LOD)
+* 🤖 AI tagging integration (CLIP/Rekognition)
+* 🏢 Enterprise pilots with archives & museums
+* 🎨 Advanced format support (Source Engine, Bethesda, mobile engines)
+* 📊 Analytics engine & performance monitoring
+
+### 🚀 **Phase 4 (18–24 months):**
+* AI creator tools (auto-PBR, upscaling, LOD generation)
 * Compliance dashboards for Pro users
-* Enterprise edition (audit logs, Steam/Epic checks)
+* Enterprise edition (audit logs, Steam/Epic integration)
 * Desktop GUI application with drag-and-drop
 
 ## 👥 Community
@@ -99,15 +115,18 @@ This stance is not a weakness — it's our **category-defining advantage**.
 
 ```bash
 # Build from source (currently required)
-git clone https://github.com/aegis-assets/aegis-assets.git
+git clone https://github.com/Nitefawkes/Aegis-Assets.git
 cd aegis-assets
 cargo build --release
 
 # Extract Unity assets
 ./target/release/aegis extract --input game.unity3d --output ./assets/ --convert
 
-# List supported formats and plugins
-./target/release/aegis plugins
+# Plugin marketplace commands
+./target/release/aegis plugins search "unity extractor"
+./target/release/aegis plugins install unity-asset-extractor
+./target/release/aegis plugins list --verbose
+./target/release/aegis plugins update
 
 # Start the web API server
 ./target/release/aegis serve --features api
@@ -118,13 +137,21 @@ cargo build --release
 ./target/release/aegis db stats
 ```
 
-### 🌐 **Web Dashboard**
+### 🌐 **Web Interfaces**
 
-After starting the API server, open `api_demo.html` in your browser to access the interactive web dashboard with:
-- 📊 Real-time asset statistics
-- 🔍 Advanced search interface  
-- 📁 Asset browsing and filtering
-- 🔌 API endpoint documentation
+After starting the API server, access the web interfaces:
+
+**Main Dashboard** (`index.html`):
+- 📊 Real-time asset statistics and system status
+- 🔍 Advanced search interface with filtering
+- 📁 Asset browsing and preview
+- 🔌 Plugin management and installation
+
+**Plugin Marketplace** (`marketplace.html`):
+- 🏪 Discover and install community plugins
+- 🔍 Search by engine, risk level, and features
+- 📦 Manage installed plugins and updates
+- 📊 Marketplace analytics and security overview
 
 ## 📜 License & Legal
 

@@ -52,6 +52,7 @@ pub mod asset_db;
 pub mod extract;
 pub mod compliance;
 pub mod patch;
+pub mod plugin_registry;
 
 #[cfg(feature = "api")]
 pub mod api;

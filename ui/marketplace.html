@@ -1,0 +1,1162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aegis-Assets Plugin Marketplace</title>
+    <style>
+        /* Reset and Base */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            font-size: 14px;
+            line-height: 1.5;
+            color: #2c3e50;
+            background-color: #f8f9fa;
+            overflow-x: hidden;
+        }
+
+        /* Layout */
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            background: white;
+            border-bottom: 1px solid #e9ecef;
+            padding: 16px 0;
+            margin-bottom: 24px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 8px;
+        }
+
+        .header p {
+            color: #6c757d;
+            font-size: 16px;
+        }
+
+        .header-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 16px;
+        }
+
+        /* Navigation */
+        .nav-tabs {
+            display: flex;
+            border-bottom: 1px solid #e9ecef;
+            margin-bottom: 24px;
+        }
+
+        .nav-tab {
+            padding: 12px 24px;
+            border: 1px solid transparent;
+            border-bottom: none;
+            background: none;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            color: #6c757d;
+            transition: all 0.2s ease;
+        }
+
+        .nav-tab:hover {
+            color: #495057;
+            background: #f8f9fa;
+        }
+
+        .nav-tab.active {
+            color: #007bff;
+            border-color: #e9ecef;
+            border-bottom: 1px solid white;
+            background: white;
+        }
+
+        /* Cards */
+        .card {
+            background: white;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+
+        .card h2 {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: #2c3e50;
+        }
+
+        .card h3 {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: #495057;
+        }
+
+        /* Search and Filters */
+        .search-bar {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .search-input {
+            flex: 1;
+            padding: 12px 16px;
+            border: 1px solid #ced4da;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #007bff;
+            box-shadow: 0 0 0 3px rgba(0,123,255,0.1);
+        }
+
+        .filter-group {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+        }
+
+        .filter-select {
+            padding: 8px 12px;
+            border: 1px solid #ced4da;
+            border-radius: 6px;
+            font-size: 14px;
+            min-width: 120px;
+        }
+
+        /* Plugin Grid */
+        .plugin-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+
+        .plugin-card {
+            background: white;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 20px;
+            transition: all 0.2s ease;
+            cursor: pointer;
+        }
+
+        .plugin-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            border-color: #007bff;
+        }
+
+        .plugin-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 16px;
+        }
+
+        .plugin-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 4px;
+        }
+
+        .plugin-version {
+            font-size: 14px;
+            color: #6c757d;
+            background: #f8f9fa;
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+
+        .plugin-status {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .status-installed {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-available {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+
+        .status-update {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .plugin-description {
+            color: #6c757d;
+            line-height: 1.4;
+            margin-bottom: 16px;
+        }
+
+        .plugin-meta {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 16px;
+            font-size: 13px;
+        }
+
+        .plugin-meta-item {
+            color: #6c757d;
+        }
+
+        .plugin-meta-item strong {
+            color: #495057;
+        }
+
+        .plugin-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .plugin-tag {
+            background: #f8f9fa;
+            color: #495057;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        .plugin-actions {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+
+        /* Buttons */
+        .btn {
+            display: inline-block;
+            padding: 8px 16px;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            background: white;
+            color: #495057;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn:hover {
+            background: #f8f9fa;
+            border-color: #adb5bd;
+        }
+
+        .btn-primary {
+            background: #007bff;
+            border-color: #007bff;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #0056b3;
+            border-color: #0056b3;
+        }
+
+        .btn-success {
+            background: #28a745;
+            border-color: #28a745;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #1e7e34;
+            border-color: #1e7e34;
+        }
+
+        .btn-warning {
+            background: #ffc107;
+            border-color: #ffc107;
+            color: #212529;
+        }
+
+        .btn-warning:hover {
+            background: #e0a800;
+            border-color: #e0a800;
+        }
+
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 13px;
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        /* Forms */
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-label {
+            display: block;
+            font-weight: 500;
+            margin-bottom: 6px;
+            color: #495057;
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ced4da;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: #007bff;
+            box-shadow: 0 0 0 3px rgba(0,123,255,0.1);
+        }
+
+        /* Progress */
+        .progress {
+            height: 8px;
+            background: #e9ecef;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 16px 0;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: #007bff;
+            transition: width 0.3s ease;
+        }
+
+        /* Lists */
+        .list {
+            border: 1px solid #e9ecef;
+            border-radius: 6px;
+            background: white;
+        }
+
+        .list-item {
+            padding: 16px 20px;
+            border-bottom: 1px solid #e9ecef;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .list-item:last-child {
+            border-bottom: none;
+        }
+
+        .list-item:hover {
+            background: #f8f9fa;
+        }
+
+        .list-item-content {
+            flex: 1;
+        }
+
+        .list-item-title {
+            font-weight: 500;
+            color: #2c3e50;
+            margin-bottom: 4px;
+        }
+
+        .list-item-subtitle {
+            font-size: 13px;
+            color: #6c757d;
+        }
+
+        /* Status */
+        .status {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .status-success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-warning {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .status-info {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+
+        .status-error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 48px 24px;
+            color: #6c757d;
+        }
+
+        .empty-state h3 {
+            font-size: 18px;
+            margin-bottom: 8px;
+            color: #495057;
+        }
+
+        .empty-state p {
+            margin-bottom: 16px;
+        }
+
+        /* Loading */
+        .loading {
+            text-align: center;
+            padding: 24px;
+            color: #6c757d;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .container {
+                padding: 16px;
+            }
+
+            .plugin-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .search-bar {
+                flex-direction: column;
+            }
+
+            .filter-group {
+                flex-direction: column;
+            }
+
+            .header-actions {
+                flex-direction: column;
+                gap: 16px;
+                align-items: flex-start;
+            }
+        }
+
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+        }
+
+        .modal.show {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid #e9ecef;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-title {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #6c757d;
+        }
+
+        .modal-body {
+            padding: 24px;
+        }
+
+        .modal-footer {
+            padding: 20px 24px;
+            border-top: 1px solid #e9ecef;
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="container">
+            <h1>🔌 Plugin Marketplace</h1>
+            <p>Discover, install, and manage plugins for Aegis-Assets</p>
+            <div class="header-actions">
+                <div id="marketplace-stats">
+                    <span id="total-plugins">Loading...</span> plugins available
+                </div>
+                <button class="btn btn-primary" onclick="refreshPlugins()">🔄 Refresh</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Navigation Tabs -->
+        <div class="nav-tabs">
+            <button class="nav-tab active" data-tab="discover">Discover</button>
+            <button class="nav-tab" data-tab="installed">Installed</button>
+            <button class="nav-tab" data-tab="updates">Updates</button>
+            <button class="nav-tab" data-tab="analytics">Analytics</button>
+        </div>
+
+        <!-- Search and Filters -->
+        <div class="card" id="search-section">
+            <h2>🔍 Search Plugins</h2>
+            <div class="search-bar">
+                <input type="text" class="search-input" id="search-input" placeholder="Search plugins by name, description, or author...">
+                <button class="btn btn-primary" onclick="searchPlugins()">Search</button>
+            </div>
+
+            <div class="filter-group">
+                <select class="filter-select" id="engine-filter">
+                    <option value="">All Engines</option>
+                    <option value="unity">Unity</option>
+                    <option value="unreal">Unreal Engine</option>
+                    <option value="godot">Godot</option>
+                    <option value="generic">Generic</option>
+                </select>
+
+                <select class="filter-select" id="risk-filter">
+                    <option value="">All Risk Levels</option>
+                    <option value="low">Low Risk</option>
+                    <option value="medium">Medium Risk</option>
+                    <option value="high">High Risk</option>
+                </select>
+
+                <select class="filter-select" id="sort-filter">
+                    <option value="relevance">Sort by Relevance</option>
+                    <option value="popularity">Sort by Popularity</option>
+                    <option value="updated">Sort by Updated</option>
+                    <option value="name">Sort by Name</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Plugin Grid -->
+        <div id="plugin-grid" class="plugin-grid"></div>
+
+        <!-- Loading State -->
+        <div id="loading-state" class="loading">
+            Loading plugins...
+        </div>
+
+        <!-- Empty State -->
+        <div id="empty-state" class="empty-state hidden">
+            <h3>No plugins found</h3>
+            <p>Try adjusting your search criteria or browse all available plugins.</p>
+            <button class="btn btn-primary" onclick="loadAllPlugins()">Browse All Plugins</button>
+        </div>
+
+        <!-- Installed Plugins Section -->
+        <div id="installed-section" class="hidden">
+            <div class="card">
+                <h2>📦 Installed Plugins</h2>
+                <div id="installed-plugins-list"></div>
+            </div>
+        </div>
+
+        <!-- Updates Section -->
+        <div id="updates-section" class="hidden">
+            <div class="card">
+                <h2>🔄 Available Updates</h2>
+                <div id="updates-list"></div>
+            </div>
+        </div>
+
+        <!-- Analytics Section -->
+        <div id="analytics-section" class="hidden">
+            <div class="grid grid-2">
+                <div class="card">
+                    <h2>📊 Marketplace Statistics</h2>
+                    <div id="marketplace-stats-details"></div>
+                </div>
+
+                <div class="card">
+                    <h2>🔒 Security Overview</h2>
+                    <div id="security-overview"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Plugin Details Modal -->
+    <div id="plugin-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modal-title">Plugin Details</h2>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="modal-body">
+                Loading...
+            </div>
+            <div class="modal-footer" id="modal-footer">
+                <button class="btn" onclick="closeModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://127.0.0.1:3000/api/v1';
+        let currentPlugins = [];
+        let currentTab = 'discover';
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            setupTabs();
+            loadAllPlugins();
+        });
+
+        // Tab Navigation
+        function setupTabs() {
+            const tabs = document.querySelectorAll('.nav-tab');
+            tabs.forEach(tab => {
+                tab.addEventListener('click', function() {
+                    // Update active tab
+                    tabs.forEach(t => t.classList.remove('active'));
+                    this.classList.add('active');
+
+                    currentTab = this.dataset.tab;
+                    showTab(currentTab);
+                });
+            });
+        }
+
+        function showTab(tabName) {
+            // Hide all sections
+            document.getElementById('plugin-grid').style.display = 'none';
+            document.getElementById('search-section').style.display = 'none';
+            document.getElementById('installed-section').style.display = 'none';
+            document.getElementById('updates-section').style.display = 'none';
+            document.getElementById('analytics-section').style.display = 'none';
+
+            // Show selected section
+            switch(tabName) {
+                case 'discover':
+                    document.getElementById('plugin-grid').style.display = 'grid';
+                    document.getElementById('search-section').style.display = 'block';
+                    break;
+                case 'installed':
+                    document.getElementById('installed-section').style.display = 'block';
+                    loadInstalledPlugins();
+                    break;
+                case 'updates':
+                    document.getElementById('updates-section').style.display = 'block';
+                    loadUpdates();
+                    break;
+                case 'analytics':
+                    document.getElementById('analytics-section').style.display = 'block';
+                    loadAnalytics();
+                    break;
+            }
+        }
+
+        // Plugin Loading
+        async function loadAllPlugins() {
+            const grid = document.getElementById('plugin-grid');
+            const loading = document.getElementById('loading-state');
+
+            grid.style.display = 'none';
+            loading.style.display = 'block';
+
+            try {
+                // In a real implementation, this would fetch from the marketplace API
+                // For now, simulate loading plugins
+                await new Promise(resolve => setTimeout(resolve, 1000));
+
+                // Mock plugin data
+                const mockPlugins = [
+                    {
+                        id: 'unity-asset-extractor',
+                        name: 'Unity Asset Extractor',
+                        version: '2.1.0',
+                        description: 'Extract and convert assets from Unity game files including textures, meshes, audio, and animations.',
+                        author: 'Aegis Team',
+                        engine: 'unity',
+                        risk_level: 'low',
+                        publisher_policy: 'permissive',
+                        tags: ['unity', 'assets', 'extraction', 'converter'],
+                        downloads: 15420,
+                        rating: 4.8,
+                        last_updated: '2024-01-15',
+                        installed: false,
+                        has_update: false
+                    },
+                    {
+                        id: 'unreal-texture-tools',
+                        name: 'Unreal Texture Tools',
+                        version: '1.5.2',
+                        description: 'Advanced texture processing and optimization tools for Unreal Engine projects.',
+                        author: 'TextureWorks',
+                        engine: 'unreal',
+                        risk_level: 'medium',
+                        publisher_policy: 'mixed',
+                        tags: ['unreal', 'textures', 'optimization', 'processing'],
+                        downloads: 8934,
+                        rating: 4.6,
+                        last_updated: '2024-01-10',
+                        installed: true,
+                        has_update: true
+                    },
+                    {
+                        id: 'generic-mesh-converter',
+                        name: 'Generic Mesh Converter',
+                        version: '3.0.1',
+                        description: 'Convert 3D models between various formats with automatic optimization.',
+                        author: 'MeshMasters',
+                        engine: 'generic',
+                        risk_level: 'low',
+                        publisher_policy: 'permissive',
+                        tags: ['meshes', '3d', 'converter', 'optimization'],
+                        downloads: 21567,
+                        rating: 4.9,
+                        last_updated: '2024-01-12',
+                        installed: true,
+                        has_update: false
+                    },
+                    {
+                        id: 'audio-batch-processor',
+                        name: 'Audio Batch Processor',
+                        version: '1.2.0',
+                        description: 'Batch process audio files with format conversion and quality optimization.',
+                        author: 'AudioPro',
+                        engine: 'generic',
+                        risk_level: 'low',
+                        publisher_policy: 'permissive',
+                        tags: ['audio', 'batch', 'processing', 'conversion'],
+                        downloads: 12345,
+                        rating: 4.7,
+                        last_updated: '2024-01-08',
+                        installed: false,
+                        has_update: false
+                    }
+                ];
+
+                currentPlugins = mockPlugins;
+                displayPlugins(mockPlugins);
+                updateStats(mockPlugins);
+
+            } catch (error) {
+                console.error('Error loading plugins:', error);
+                showEmptyState('Failed to load plugins. Please try again.');
+            }
+        }
+
+        function displayPlugins(plugins) {
+            const grid = document.getElementById('plugin-grid');
+            const loading = document.getElementById('loading-state');
+
+            grid.innerHTML = '';
+            loading.style.display = 'none';
+
+            if (plugins.length === 0) {
+                showEmptyState('No plugins found matching your criteria.');
+                return;
+            }
+
+            grid.style.display = 'grid';
+
+            plugins.forEach(plugin => {
+                const pluginCard = createPluginCard(plugin);
+                grid.appendChild(pluginCard);
+            });
+        }
+
+        function createPluginCard(plugin) {
+            const card = document.createElement('div');
+            card.className = 'plugin-card';
+            card.onclick = () => showPluginDetails(plugin);
+
+            const statusClass = plugin.installed ? 'status-installed' :
+                              plugin.has_update ? 'status-update' : 'status-available';
+            const statusText = plugin.installed ? 'Installed' :
+                             plugin.has_update ? 'Update Available' : 'Available';
+
+            card.innerHTML = `
+                <div class="plugin-header">
+                    <div>
+                        <div class="plugin-title">${plugin.name}</div>
+                        <div class="plugin-version">v${plugin.version}</div>
+                    </div>
+                    <span class="plugin-status status ${statusClass}">${statusText}</span>
+                </div>
+
+                <div class="plugin-description">${plugin.description}</div>
+
+                <div class="plugin-meta">
+                    <div class="plugin-meta-item">
+                        <strong>Author:</strong> ${plugin.author}
+                    </div>
+                    <div class="plugin-meta-item">
+                        <strong>Downloads:</strong> ${plugin.downloads.toLocaleString()}
+                    </div>
+                </div>
+
+                <div class="plugin-tags">
+                    ${plugin.tags.map(tag => `<span class="plugin-tag">${tag}</span>`).join('')}
+                </div>
+
+                <div class="plugin-actions">
+                    ${plugin.installed ?
+                        `<button class="btn btn-warning btn-sm" onclick="event.stopPropagation(); uninstallPlugin('${plugin.id}')">Uninstall</button>` :
+                        `<button class="btn btn-primary btn-sm" onclick="event.stopPropagation(); installPlugin('${plugin.id}')">Install</button>`
+                    }
+                    <button class="btn btn-sm" onclick="event.stopPropagation(); showPluginDetails('${plugin.id}')">Details</button>
+                </div>
+            `;
+
+            return card;
+        }
+
+        function updateStats(plugins) {
+            const stats = document.getElementById('marketplace-stats');
+            const details = document.getElementById('marketplace-stats-details');
+
+            const totalPlugins = plugins.length;
+            const installedCount = plugins.filter(p => p.installed).length;
+            const updatesCount = plugins.filter(p => p.has_update).length;
+
+            stats.innerHTML = `
+                ${totalPlugins} plugins available • ${installedCount} installed • ${updatesCount} updates
+            `;
+
+            if (details) {
+                const engineCounts = {};
+                const riskCounts = {};
+
+                plugins.forEach(plugin => {
+                    engineCounts[plugin.engine] = (engineCounts[plugin.engine] || 0) + 1;
+                    riskCounts[plugin.risk_level] = (riskCounts[plugin.risk_level] || 0) + 1;
+                });
+
+                details.innerHTML = `
+                    <div class="list">
+                        <div class="list-item">
+                            <div class="list-item-content">
+                                <div class="list-item-title">Total Plugins</div>
+                                <div class="list-item-subtitle">Available in marketplace</div>
+                            </div>
+                            <span class="status status-info">${totalPlugins}</span>
+                        </div>
+                        <div class="list-item">
+                            <div class="list-item-content">
+                                <div class="list-item-title">Installed</div>
+                                <div class="list-item-subtitle">Currently installed plugins</div>
+                            </div>
+                            <span class="status status-success">${installedCount}</span>
+                        </div>
+                        <div class="list-item">
+                            <div class="list-item-content">
+                                <div class="list-item-title">Updates Available</div>
+                                <div class="list-item-subtitle">Plugins with newer versions</div>
+                            </div>
+                            <span class="status status-warning">${updatesCount}</span>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        function showEmptyState(message) {
+            const grid = document.getElementById('plugin-grid');
+            const loading = document.getElementById('loading-state');
+            const empty = document.getElementById('empty-state');
+
+            grid.style.display = 'none';
+            loading.style.display = 'none';
+            empty.classList.remove('hidden');
+            empty.querySelector('p').textContent = message;
+        }
+
+        // Plugin Actions
+        async function installPlugin(pluginId) {
+            const plugin = currentPlugins.find(p => p.id === pluginId);
+            if (!plugin) return;
+
+            console.log('Installing plugin:', plugin.name);
+
+            // In a real implementation, this would call the installation API
+            alert(`Installing ${plugin.name}...\n\nThis would download and install the plugin from the marketplace.`);
+        }
+
+        async function uninstallPlugin(pluginId) {
+            const plugin = currentPlugins.find(p => p.id === pluginId);
+            if (!plugin) return;
+
+            console.log('Uninstalling plugin:', plugin.name);
+
+            if (confirm(`Are you sure you want to uninstall ${plugin.name}?`)) {
+                alert(`Uninstalled ${plugin.name}\n\nThis would remove the plugin and its dependencies.`);
+            }
+        }
+
+        function showPluginDetails(pluginId) {
+            const plugin = currentPlugins.find(p => p.id === pluginId);
+            if (!plugin) return;
+
+            const modal = document.getElementById('plugin-modal');
+            const title = document.getElementById('modal-title');
+            const body = document.getElementById('modal-body');
+            const footer = document.getElementById('modal-footer');
+
+            title.textContent = `${plugin.name} v${plugin.version}`;
+            body.innerHTML = `
+                <div class="form-group">
+                    <strong>Description:</strong>
+                    <p>${plugin.description}</p>
+                </div>
+
+                <div class="form-group">
+                    <strong>Author:</strong> ${plugin.author}
+                </div>
+
+                <div class="form-group">
+                    <strong>Engine:</strong> ${plugin.engine.charAt(0).toUpperCase() + plugin.engine.slice(1)}
+                </div>
+
+                <div class="form-group">
+                    <strong>Risk Level:</strong>
+                    <span class="status ${plugin.risk_level === 'low' ? 'status-success' : plugin.risk_level === 'medium' ? 'status-warning' : 'status-error'}">
+                        ${plugin.risk_level.charAt(0).toUpperCase() + plugin.risk_level.slice(1)} Risk
+                    </span>
+                </div>
+
+                <div class="form-group">
+                    <strong>Publisher Policy:</strong> ${plugin.publisher_policy}
+                </div>
+
+                <div class="form-group">
+                    <strong>Tags:</strong>
+                    <div class="plugin-tags">
+                        ${plugin.tags.map(tag => `<span class="plugin-tag">${tag}</span>`).join('')}
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <strong>Downloads:</strong> ${plugin.downloads.toLocaleString()}
+                </div>
+
+                <div class="form-group">
+                    <strong>Rating:</strong> ⭐ ${plugin.rating}/5.0
+                </div>
+
+                <div class="form-group">
+                    <strong>Last Updated:</strong> ${plugin.last_updated}
+                </div>
+            `;
+
+            footer.innerHTML = `
+                <button class="btn" onclick="closeModal()">Close</button>
+                <button class="btn btn-primary" onclick="installPlugin('${plugin.id}')">
+                    ${plugin.installed ? 'Reinstall' : 'Install'}
+                </button>
+            `;
+
+            modal.classList.add('show');
+        }
+
+        function closeModal() {
+            document.getElementById('plugin-modal').classList.remove('show');
+        }
+
+        // Search functionality
+        function searchPlugins() {
+            const query = document.getElementById('search-input').value.toLowerCase();
+            const engineFilter = document.getElementById('engine-filter').value;
+            const riskFilter = document.getElementById('risk-filter').value;
+
+            const filtered = currentPlugins.filter(plugin => {
+                const matchesQuery = !query ||
+                    plugin.name.toLowerCase().includes(query) ||
+                    plugin.description.toLowerCase().includes(query) ||
+                    plugin.author.toLowerCase().includes(query) ||
+                    plugin.tags.some(tag => tag.toLowerCase().includes(query));
+
+                const matchesEngine = !engineFilter || plugin.engine === engineFilter;
+                const matchesRisk = !riskFilter || plugin.risk_level === riskFilter;
+
+                return matchesQuery && matchesEngine && matchesRisk;
+            });
+
+            displayPlugins(filtered);
+        }
+
+        // Installed plugins
+        function loadInstalledPlugins() {
+            const installed = currentPlugins.filter(p => p.installed);
+            const container = document.getElementById('installed-plugins-list');
+
+            if (installed.length === 0) {
+                container.innerHTML = '<div class="empty-state"><h3>No plugins installed</h3><p>Install some plugins to get started!</p></div>';
+                return;
+            }
+
+            let html = '<div class="list">';
+            installed.forEach(plugin => {
+                const statusClass = plugin.has_update ? 'status-warning' : 'status-success';
+                const statusText = plugin.has_update ? 'Update Available' : 'Installed';
+
+                html += `
+                    <div class="list-item">
+                        <div class="list-item-content">
+                            <div class="list-item-title">${plugin.name} v${plugin.version}</div>
+                            <div class="list-item-subtitle">${plugin.description}</div>
+                        </div>
+                        <div>
+                            <span class="status ${statusClass}">${statusText}</span>
+                        </div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+
+            container.innerHTML = html;
+        }
+
+        // Updates
+        function loadUpdates() {
+            const updates = currentPlugins.filter(p => p.has_update);
+            const container = document.getElementById('updates-list');
+
+            if (updates.length === 0) {
+                container.innerHTML = '<div class="empty-state"><h3>All plugins are up to date</h3><p>No updates available at this time.</p></div>';
+                return;
+            }
+
+            let html = '<div class="list">';
+            updates.forEach(plugin => {
+                html += `
+                    <div class="list-item">
+                        <div class="list-item-content">
+                            <div class="list-item-title">${plugin.name}</div>
+                            <div class="list-item-subtitle">Current: v${plugin.version} → Latest: v${plugin.version}</div>
+                        </div>
+                        <button class="btn btn-primary btn-sm" onclick="installPlugin('${plugin.id}')">Update</button>
+                    </div>
+                `;
+            });
+            html += '</div>';
+
+            container.innerHTML = html;
+        }
+
+        // Analytics
+        function loadAnalytics() {
+            const securityContainer = document.getElementById('security-overview');
+
+            // Mock security data
+            const securityData = {
+                verified: Math.floor(currentPlugins.length * 0.7),
+                unverified: Math.floor(currentPlugins.length * 0.2),
+                risky: Math.floor(currentPlugins.length * 0.1)
+            };
+
+            securityContainer.innerHTML = `
+                <div class="list">
+                    <div class="list-item">
+                        <div class="list-item-content">
+                            <div class="list-item-title">Verified Plugins</div>
+                            <div class="list-item-subtitle">Code-signed and security reviewed</div>
+                        </div>
+                        <span class="status status-success">${securityData.verified}</span>
+                    </div>
+                    <div class="list-item">
+                        <div class="list-item-content">
+                            <div class="list-item-title">Community Plugins</div>
+                            <div class="list-item-subtitle">Unsigned but from trusted sources</div>
+                        </div>
+                        <span class="status status-warning">${securityData.unverified}</span>
+                    </div>
+                    <div class="list-item">
+                        <div class="list-item-content">
+                            <div class="list-item-title">High Risk</div>
+                            <div class="list-item-subtitle">Requires additional review</div>
+                        </div>
+                        <span class="status status-error">${securityData.risky}</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Utility functions
+        function refreshPlugins() {
+            loadAllPlugins();
+        }
+
+        // Event listeners
+        document.getElementById('search-input').addEventListener('input', debounce(searchPlugins, 300));
+
+        function debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => {
+                    clearTimeout(timeout);
+                    func(...args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        }
+    </script>
+</body>
+</html>

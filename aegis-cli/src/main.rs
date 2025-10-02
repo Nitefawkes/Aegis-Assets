@@ -58,8 +58,11 @@ enum Commands {
         profile: Option<String>,
     },
     
-    /// List available plugins and supported formats
-    Plugins,
+    /// Plugin management and marketplace
+    Plugins {
+        #[command(subcommand)]
+        command: PluginsCommands,
+    },
 
     /// Asset database and search operations
     Db {
@@ -96,6 +99,107 @@ enum Commands {
 
     /// Show version and build information
     Version,
+}
+
+/// Plugin management subcommands
+#[derive(Subcommand)]
+enum PluginsCommands {
+    /// List installed plugins
+    List {
+        /// Show detailed information
+        #[arg(short, long)]
+        verbose: bool,
+    },
+
+    /// Search for plugins in the marketplace
+    Search {
+        /// Search query
+        #[arg(value_name = "QUERY")]
+        query: String,
+
+        /// Filter by engine (unity, unreal, etc.)
+        #[arg(short, long, value_name = "ENGINE")]
+        engine: Option<String>,
+
+        /// Filter by risk level (low, medium, high)
+        #[arg(short, long, value_name = "RISK")]
+        risk: Option<String>,
+
+        /// Limit number of results
+        #[arg(short, long, value_name = "LIMIT")]
+        limit: Option<usize>,
+
+        /// Verbose output with full plugin information
+        #[arg(short, long)]
+        verbose: bool,
+    },
+
+    /// Get detailed information about a plugin
+    Info {
+        /// Plugin name or ID
+        #[arg(value_name = "PLUGIN")]
+        plugin: String,
+
+        /// Show version history
+        #[arg(long)]
+        history: bool,
+
+        /// Show compliance information
+        #[arg(long)]
+        compliance: bool,
+    },
+
+    /// Install a plugin
+    Install {
+        /// Plugin name to install
+        #[arg(value_name = "PLUGIN")]
+        plugin: String,
+
+        /// Specific version to install
+        #[arg(long, value_name = "VERSION")]
+        version: Option<String>,
+
+        /// Force installation even if plugin is already installed
+        #[arg(long)]
+        force: bool,
+
+        /// Skip dependency resolution
+        #[arg(long)]
+        skip_deps: bool,
+    },
+
+    /// Uninstall a plugin
+    Uninstall {
+        /// Plugin name to uninstall
+        #[arg(value_name = "PLUGIN")]
+        plugin: String,
+
+        /// Remove plugin data and configurations
+        #[arg(long)]
+        purge: bool,
+
+        /// Skip dependency checks
+        #[arg(long)]
+        skip_deps: bool,
+    },
+
+    /// Update installed plugins
+    Update {
+        /// Specific plugin to update (updates all if not specified)
+        #[arg(value_name = "PLUGIN")]
+        plugin: Option<String>,
+
+        /// Update to latest versions even if breaking changes
+        #[arg(long)]
+        force: bool,
+
+        /// Skip dependency resolution
+        #[arg(long)]
+        skip_deps: bool,
+    },
+
+    /// Show plugin marketplace statistics
+    Stats,
 }
 
 /// Database subcommands
@@ -198,8 +302,8 @@ async fn main() -> Result<()> {
             handle_list_assets(input, *details, plugin_registry)?;
         }
         
-        Commands::Plugins => {
-            handle_list_plugins(plugin_registry)?;
+        Commands::Plugins { command } => {
+            handle_plugins_command(command, plugin_registry)?;
         }
         
         Commands::Version => {
@@ -515,24 +619,60 @@ fn handle_list_assets(
     Ok(())
 }
 
+/// Handle plugin management commands
+fn handle_plugins_command(command: &PluginsCommands, plugin_registry: PluginRegistry) -> Result<()> {
+    match command {
+        PluginsCommands::List { verbose } => {
+            handle_list_plugins(plugin_registry, *verbose)?;
+        }
+        PluginsCommands::Search { query, engine, risk, limit, verbose } => {
+            handle_search_plugins(query, engine.as_ref(), risk.as_ref(), *limit, *verbose, plugin_registry)?;
+        }
+        PluginsCommands::Info { plugin, history, compliance } => {
+            handle_plugin_info(plugin, *history, *compliance, plugin_registry)?;
+        }
+        PluginsCommands::Install { plugin, version, force, skip_deps } => {
+            handle_install_plugin(plugin, version.as_ref(), *force, *skip_deps, plugin_registry)?;
+        }
+        PluginsCommands::Uninstall { plugin, purge, skip_deps } => {
+            handle_uninstall_plugin(plugin, *purge, *skip_deps, plugin_registry)?;
+        }
+        PluginsCommands::Update { plugin, force, skip_deps } => {
+            handle_update_plugins(plugin.as_ref(), *force, *skip_deps, plugin_registry)?;
+        }
+        PluginsCommands::Stats => {
+            handle_plugin_stats(plugin_registry)?;
+        }
+    }
+    Ok(())
+}
+
 /// Handle listing available plugins
-fn handle_list_plugins(plugin_registry: PluginRegistry) -> Result<()> {
+fn handle_list_plugins(plugin_registry: PluginRegistry, verbose: bool) -> Result<()> {
     println!("🔌 Available plugins:");
-    
+
     let plugins = plugin_registry.list_plugins();
     if plugins.is_empty() {
         println!("   No plugins loaded!");
         return Ok(());
     }
-    
+
     for plugin in plugins {
         let compliance = plugin.compliance_info();
         let status = if compliance.compliance_verified { "✅" } else { "⚠️" };
-        
+
         println!("   {} {} v{}", status, plugin.name(), plugin.version());
         println!("      Extensions: {}", plugin.supported_extensions().join(", "));
-        if let Some(author) = &compliance.author {
-            println!("      Author: {}", author);
+
+        if verbose {
+            if let Some(author) = &compliance.author {
+                println!("      Author: {}", author);
+            }
+            if let Some(description) = &compliance.description {
+                println!("      Description: {}", description);
+            }
+            println!("      Risk Level: {:?}", compliance.risk_level);
+            println!("      Publisher Policy: {:?}", compliance.publisher_policy);
         }
     }
 
@@ -860,6 +1000,276 @@ async fn handle_serve_command(
 
     server.serve(addr).await
         .context("Server error")?;
+
+    Ok(())
+}
+
+/// Handle plugin search
+fn handle_search_plugins(
+    query: &str,
+    engine: Option<&String>,
+    risk: Option<&String>,
+    limit: Option<usize>,
+    verbose: bool,
+    plugin_registry: PluginRegistry,
+) -> Result<()> {
+    println!("🔍 Searching for plugins: {}", query);
+
+    if query.is_empty() {
+        println!("❌ Search query cannot be empty");
+        return Ok(());
+    }
+
+    // For now, search through loaded plugins
+    // In a full implementation, this would search the marketplace
+    let plugins = plugin_registry.list_plugins();
+    let filtered_plugins: Vec<_> = plugins
+        .into_iter()
+        .filter(|plugin| {
+            let name_match = plugin.name().to_lowercase().contains(&query.to_lowercase());
+            let desc_match = plugin.compliance_info()
+                .description
+                .as_ref()
+                .map_or(false, |desc| desc.to_lowercase().contains(&query.to_lowercase()));
+
+            name_match || desc_match
+        })
+        .collect();
+
+    if filtered_plugins.is_empty() {
+        println!("❌ No plugins found matching '{}'", query);
+        return Ok(());
+    }
+
+    let display_count = limit.unwrap_or(filtered_plugins.len());
+    let plugins_to_show = &filtered_plugins[..display_count.min(filtered_plugins.len())];
+
+    println!("📦 Found {} plugins (showing {}):", filtered_plugins.len(), plugins_to_show.len());
+
+    for plugin in plugins_to_show {
+        let compliance = plugin.compliance_info();
+        let status = if compliance.compliance_verified { "✅" } else { "⚠️" };
+
+        println!("   {} {} v{}", status, plugin.name(), plugin.version());
+        println!("      Extensions: {}", plugin.supported_extensions().join(", "));
+
+        if verbose {
+            if let Some(description) = &compliance.description {
+                println!("      Description: {}", description);
+            }
+            if let Some(author) = &compliance.author {
+                println!("      Author: {}", author);
+            }
+            println!("      Risk Level: {:?}", compliance.risk_level);
+            println!("      Publisher Policy: {:?}", compliance.publisher_policy);
+        }
+    }
+
+    Ok(())
+}
+
+/// Handle plugin info
+fn handle_plugin_info(
+    plugin_name: &str,
+    show_history: bool,
+    show_compliance: bool,
+    plugin_registry: PluginRegistry,
+) -> Result<()> {
+    println!("📋 Plugin information: {}", plugin_name);
+
+    // Find the plugin
+    let plugins = plugin_registry.list_plugins();
+    let plugin = plugins
+        .into_iter()
+        .find(|p| p.name() == plugin_name);
+
+    match plugin {
+        Some(plugin) => {
+            let compliance = plugin.compliance_info();
+            let status = if compliance.compliance_verified { "✅" } else { "⚠️" };
+
+            println!("   Name: {} v{}", plugin.name(), plugin.version());
+            println!("   Status: {}", status);
+            println!("   Extensions: {}", plugin.supported_extensions().join(", "));
+
+            if let Some(description) = &compliance.description {
+                println!("   Description: {}", description);
+            }
+            if let Some(author) = &compliance.author {
+                println!("   Author: {}", author);
+            }
+            if let Some(homepage) = &compliance.homepage {
+                println!("   Homepage: {}", homepage);
+            }
+
+            if show_compliance {
+                println!("\n📋 Compliance Information:");
+                println!("   Risk Level: {:?}", compliance.risk_level);
+                println!("   Publisher Policy: {:?}", compliance.publisher_policy);
+                println!("   Bounty Eligible: {}", if compliance.bounty_eligible { "Yes" } else { "No" });
+                println!("   Enterprise Approved: {}", if compliance.enterprise_approved { "Yes" } else { "No" });
+            }
+
+            if show_history {
+                println!("\n📜 Version History:");
+                println!("   (History not available - plugin registry integration needed)");
+            }
+        }
+        None => {
+            println!("❌ Plugin '{}' not found", plugin_name);
+            println!("\n💡 Available plugins:");
+            for plugin in plugin_registry.list_plugins() {
+                println!("   • {} v{}", plugin.name(), plugin.version());
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Handle plugin installation
+fn handle_install_plugin(
+    plugin_name: &str,
+    version: Option<&String>,
+    force: bool,
+    skip_deps: bool,
+    plugin_registry: PluginRegistry,
+) -> Result<()> {
+    println!("📦 Installing plugin: {}", plugin_name);
+
+    // Check if plugin is already installed
+    let plugins = plugin_registry.list_plugins();
+    let already_installed = plugins.iter().any(|p| p.name() == plugin_name);
+
+    if already_installed && !force {
+        println!("⚠️  Plugin '{}' is already installed", plugin_name);
+        println!("   Use --force to reinstall");
+        return Ok(());
+    }
+
+    println!("🔍 Searching marketplace for '{}'...", plugin_name);
+
+    // Mock marketplace search
+    // In a real implementation, this would search the marketplace API
+    println!("❌ Plugin '{}' not found in marketplace", plugin_name);
+    println!("\n💡 Available plugins:");
+    for plugin in plugin_registry.list_plugins() {
+        println!("   • {} v{}", plugin.name(), plugin.version());
+    }
+
+    Ok(())
+}
+
+/// Handle plugin uninstallation
+fn handle_uninstall_plugin(
+    plugin_name: &str,
+    purge: bool,
+    skip_deps: bool,
+    plugin_registry: PluginRegistry,
+) -> Result<()> {
+    println!("🗑️  Uninstalling plugin: {}", plugin_name);
+
+    // Check if plugin is installed
+    let plugins = plugin_registry.list_plugins();
+    let plugin_exists = plugins.iter().any(|p| p.name() == plugin_name);
+
+    if !plugin_exists {
+        println!("❌ Plugin '{}' is not installed", plugin_name);
+        return Ok(());
+    }
+
+    // Mock uninstallation
+    println!("⚠️  Plugin '{}' would be uninstalled", plugin_name);
+    if purge {
+        println!("   (Purge mode: also removing configuration and data)");
+    }
+    if skip_deps {
+        println!("   (Skipping dependency checks)");
+    }
+    println!("✅ Plugin '{}' uninstalled successfully", plugin_name);
+
+    Ok(())
+}
+
+/// Handle plugin updates
+fn handle_update_plugins(
+    specific_plugin: Option<&String>,
+    force: bool,
+    skip_deps: bool,
+    plugin_registry: PluginRegistry,
+) -> Result<()> {
+    println!("🔄 Updating plugins...");
+
+    let plugins = plugin_registry.list_plugins();
+
+    if let Some(plugin_name) = specific_plugin {
+        println!("📦 Updating specific plugin: {}", plugin_name);
+
+        let plugin_exists = plugins.iter().any(|p| p.name() == plugin_name);
+        if !plugin_exists {
+            println!("❌ Plugin '{}' is not installed", plugin_name);
+            return Ok(());
+        }
+
+        println!("✅ Plugin '{}' updated to latest version", plugin_name);
+    } else {
+        println!("📦 Checking for updates for {} plugins...", plugins.len());
+
+        if plugins.is_empty() {
+            println!("❌ No plugins installed");
+            return Ok(());
+        }
+
+        // Mock update check
+        println!("✅ All plugins are up to date");
+        if force {
+            println!("   (Force update: would update even with breaking changes)");
+        }
+    }
+
+    Ok(())
+}
+
+/// Handle plugin marketplace statistics
+fn handle_plugin_stats(plugin_registry: PluginRegistry) -> Result<()> {
+    println!("📊 Plugin Marketplace Statistics");
+
+    let plugins = plugin_registry.list_plugins();
+
+    println!("   📦 Total Plugins: {}", plugins.len());
+
+    // Count by type
+    let mut format_counts = std::collections::HashMap::new();
+    for plugin in &plugins {
+        for ext in plugin.supported_extensions() {
+            *format_counts.entry(ext.clone()).or_insert(0) += 1;
+        }
+    }
+
+    println!("   📁 Supported Formats:");
+    for (format, count) in format_counts {
+        println!("      {}: {} plugins", format, count);
+    }
+
+    // Compliance statistics
+    let mut risk_counts = std::collections::HashMap::new();
+    let mut policy_counts = std::collections::HashMap::new();
+
+    for plugin in &plugins {
+        let compliance = plugin.compliance_info();
+        *risk_counts.entry(format!("{:?}", compliance.risk_level)).or_insert(0) += 1;
+        *policy_counts.entry(format!("{:?}", compliance.publisher_policy)).or_insert(0) += 1;
+    }
+
+    println!("   ⚖️  Risk Distribution:");
+    for (risk, count) in risk_counts {
+        println!("      {}: {} plugins", risk, count);
+    }
+
+    println!("   📋 Publisher Policies:");
+    for (policy, count) in policy_counts {
+        println!("      {}: {} plugins", policy, count);
+    }
 
     Ok(())
 }

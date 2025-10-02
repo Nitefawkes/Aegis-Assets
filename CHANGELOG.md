@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Unity Plugin — Audio Pipeline (Sprint 3)**
+  - FSB4/FSB5 container parsing with loop metadata extraction
+  - Vorbis decoding via `fsbex` with OGG output support
+  - Firelight ADPCM (GCADPCM/FADPCM) decoder ported from Fmod5Sharp
+  - DSP coefficient chunk parsing for ADPCM streams
+  - Audio validation framework with duration checks and tolerance settings
+  - Loop metadata preservation (`start`, `end`, `count`) with formatted display
+  - Warning collection for unsupported codecs and duration mismatches
+  - WAV encoder supporting 8/16/24/32-bit PCM output
+  - Unit tests for audio pipeline options, stats, loop metadata, and coefficient extraction
+  - Modular `audio_pipeline.rs` and `firelight_adpcm.rs` modules
+
 ## [0.2.0] - 2025-09-15
 
 ### 🚀 Major Features Added

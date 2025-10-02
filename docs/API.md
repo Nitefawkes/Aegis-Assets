@@ -35,7 +35,13 @@ Check if the API server is running and get version information.
 {
   "status": "healthy",
   "version": "0.2.0",
-  "timestamp": 1694789122
+  "timestamp": 1694789122,
+  "features": {
+    "plugin_marketplace": true,
+    "parallel_processing": false,
+    "streaming_extraction": false,
+    "advanced_memory_mgmt": false
+  }
 }
 ```
 
@@ -58,7 +64,16 @@ Get API metadata and available endpoints.
     "/api/v1/assets/{id}",
     "/api/v1/assets/stats",
     "/api/v1/db/index",
-    "/api/v1/db/stats"
+    "/api/v1/db/stats",
+    "/api/v1/plugins",
+    "/api/v1/plugins/search",
+    "/api/v1/plugins/{id}",
+    "/api/v1/plugins/{id}/install",
+    "/api/v1/plugins/{id}/versions",
+    "/api/v1/plugins/stats",
+    "/api/v1/extract",
+    "/api/v1/extract/batch",
+    "/api/v1/extract/progress/{id}"
   ]
 }
 ```
@@ -220,6 +235,345 @@ Add assets from a directory to the database.
 Alias for `/assets/stats` - get database statistics.
 
 **GET** `/db/stats`
+
+## 🔌 Plugin Marketplace Endpoints
+
+### List Available Plugins
+
+Retrieve a list of plugins available in the marketplace.
+
+**GET** `/plugins`
+
+**Query Parameters:**
+- `engine` (optional) - Filter by game engine (unity, unreal, godot, generic)
+- `risk_level` (optional) - Filter by risk level (low, medium, high)
+- `limit` (optional) - Maximum number of results (default: 50, max: 100)
+- `offset` (optional) - Result offset for pagination (default: 0)
+
+**Response:**
+```json
+{
+  "plugins": [
+    {
+      "id": "unity-asset-extractor",
+      "name": "Unity Asset Extractor",
+      "version": "2.1.0",
+      "description": "Extract and convert assets from Unity game files",
+      "author": "Aegis Team",
+      "engine": "unity",
+      "risk_level": "low",
+      "publisher_policy": "permissive",
+      "tags": ["unity", "assets", "extraction"],
+      "downloads": 15420,
+      "rating": 4.8,
+      "last_updated": "2024-01-15T10:30:00Z",
+      "installed": false,
+      "has_update": false
+    }
+  ],
+  "total": 156,
+  "limit": 50,
+  "offset": 0
+}
+```
+
+### Search Plugins
+
+Search for plugins using text queries and filters.
+
+**GET** `/plugins/search`
+
+**Query Parameters:**
+- `q` (optional) - Text search query
+- `engine` (optional) - Filter by game engine
+- `risk_level` (optional) - Filter by risk level
+- `tags` (optional) - Filter by tags (comma-separated)
+- `sort_by` (optional) - Sort order (relevance, popularity, updated, name)
+- `limit` (optional) - Maximum results (default: 20)
+
+**Response:**
+```json
+{
+  "results": [
+    {
+      "plugin": {
+        "id": "unity-asset-extractor",
+        "name": "Unity Asset Extractor",
+        // ... full plugin object
+      },
+      "relevance_score": 0.95,
+      "matched_fields": ["name", "description", "tags"]
+    }
+  ],
+  "query": "unity extractor",
+  "total": 12
+}
+```
+
+### Get Plugin Details
+
+Retrieve detailed information about a specific plugin.
+
+**GET** `/plugins/{id}`
+
+**Response:**
+```json
+{
+  "plugin": {
+    "id": "unity-asset-extractor",
+    "name": "Unity Asset Extractor",
+    "version": "2.1.0",
+    "description": "Complete Unity asset extraction and conversion toolkit",
+    "author": "Aegis Team",
+    "license": "MIT",
+    "homepage": "https://github.com/aegis-assets/unity-extractor",
+    "repository": "https://github.com/aegis-assets/unity-extractor",
+    "keywords": ["unity", "assets", "extraction", "converter"],
+    "engine": "unity",
+    "risk_level": "low",
+    "publisher_policy": "permissive",
+    "bounty_eligible": true,
+    "enterprise_approved": true,
+    "created_at": "2024-01-01T00:00:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "status": "approved"
+  },
+  "versions": ["2.1.0", "2.0.1", "2.0.0", "1.5.2"],
+  "download_stats": {
+    "total_downloads": 15420,
+    "downloads_last_30_days": 1234,
+    "version_breakdown": {
+      "2.1.0": 5678,
+      "2.0.1": 4321
+    }
+  },
+  "rating": {
+    "average": 4.8,
+    "count": 234,
+    "distribution": {
+      "5": 189,
+      "4": 34,
+      "3": 8,
+      "2": 2,
+      "1": 1
+    }
+  }
+}
+```
+
+### Install Plugin
+
+Install or update a plugin from the marketplace.
+
+**POST** `/plugins/{id}/install`
+
+**Query Parameters:**
+- `version` (optional) - Specific version to install (default: latest)
+
+**Request Body:**
+```json
+{
+  "force": false,
+  "skip_dependencies": false
+}
+```
+
+**Response:**
+```json
+{
+  "message": "Successfully installed unity-asset-extractor v2.1.0",
+  "plugin_id": "unity-asset-extractor",
+  "version": "2.1.0",
+  "installation_time_ms": 15420,
+  "dependencies_installed": ["serde", "tokio"]
+}
+```
+
+### Get Plugin Versions
+
+Retrieve version history for a plugin.
+
+**GET** `/plugins/{id}/versions`
+
+**Response:**
+```json
+{
+  "plugin_id": "unity-asset-extractor",
+  "versions": [
+    {
+      "version": "2.1.0",
+      "published_at": "2024-01-15T10:30:00Z",
+      "package_size": 2457600,
+      "package_hash": "sha256:abc123...",
+      "changelog": "Added support for Unity 2023...",
+      "breaking_changes": false,
+      "download_count": 5678
+    },
+    {
+      "version": "2.0.1",
+      "published_at": "2024-01-10T14:20:00Z",
+      "package_size": 2345678,
+      "package_hash": "sha256:def456...",
+      "changelog": "Bug fixes and performance improvements",
+      "breaking_changes": false,
+      "download_count": 4321
+    }
+  ]
+}
+```
+
+### Plugin Marketplace Statistics
+
+Get marketplace-wide statistics and analytics.
+
+**GET** `/plugins/stats`
+
+**Response:**
+```json
+{
+  "total_plugins": 156,
+  "total_versions": 432,
+  "total_downloads": 45678,
+  "pending_reviews": 23,
+  "plugins_by_engine": {
+    "unity": 67,
+    "unreal": 34,
+    "godot": 23,
+    "generic": 32
+  },
+  "plugins_by_risk_level": {
+    "low": 123,
+    "medium": 28,
+    "high": 5
+  },
+  "top_downloads": [
+    {
+      "plugin_id": "unity-asset-extractor",
+      "name": "Unity Asset Extractor",
+      "downloads": 15420
+    }
+  ],
+  "recent_updates": [
+    {
+      "plugin_id": "unreal-texture-tools",
+      "name": "Unreal Texture Tools",
+      "version": "1.5.2",
+      "updated_at": "2024-01-10T14:20:00Z"
+    }
+  ]
+}
+```
+
+## ⚡ Enhanced Extraction Endpoints
+
+### Single File Extraction
+
+Extract assets from a single file with advanced options.
+
+**POST** `/extract`
+
+**Request Body:**
+```json
+{
+  "source_path": "/path/to/game.unity3d",
+  "output_dir": "/path/to/output/",
+  "options": {
+    "convert_assets": true,
+    "max_memory_mb": 4096,
+    "enable_streaming": false,
+    "parallel_processing": false,
+    "quality_settings": {
+      "texture_format": "PNG",
+      "mesh_format": "GLTF",
+      "audio_format": "OGG",
+      "compression_level": "high"
+    },
+    "compliance_mode": "strict"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "extraction_id": "extract_12345",
+  "source_path": "/path/to/game.unity3d",
+  "status": "processing",
+  "progress": 0.0,
+  "estimated_completion": "2024-01-15T10:35:00Z",
+  "resources_found": 0,
+  "bytes_processed": 0
+}
+```
+
+### Batch Extraction
+
+Extract assets from multiple files concurrently.
+
+**POST** `/extract/batch`
+
+**Request Body:**
+```json
+{
+  "sources": [
+    "/path/to/game1.unity3d",
+    "/path/to/game2.pak",
+    "/path/to/level1.dat"
+  ],
+  "output_dir": "/path/to/output/",
+  "options": {
+    "max_concurrent": 4,
+    "continue_on_error": true,
+    "progress_reporting": true
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "batch_id": "batch_67890",
+  "total_files": 3,
+  "status": "processing",
+  "extractions": [
+    {
+      "extraction_id": "extract_12345",
+      "source_path": "/path/to/game1.unity3d",
+      "status": "processing",
+      "progress": 0.25
+    }
+  ]
+}
+```
+
+### Extraction Progress
+
+Monitor the progress of an ongoing extraction.
+
+**GET** `/extract/progress/{id}`
+
+**Response:**
+```json
+{
+  "extraction_id": "extract_12345",
+  "status": "processing",
+  "progress": 0.75,
+  "stage": "converting_textures",
+  "resources_extracted": 23,
+  "resources_total": 31,
+  "bytes_processed": 24567890,
+  "bytes_total": 32768000,
+  "estimated_time_remaining_ms": 45000,
+  "performance_metrics": {
+    "processing_speed_mbps": 45.2,
+    "memory_usage_mb": 234,
+    "compression_ratio": 0.85
+  },
+  "warnings": [
+    "Large texture detected: main_character_diffuse.png (8MB)"
+  ]
+}
+```
 
 ## 🔍 Asset Types
 

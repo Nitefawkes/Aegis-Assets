@@ -37,14 +37,13 @@ walkdir = "2.4"
 once_cell = "1.19"
 dashmap = "5.5"
 
-<<<<<<< HEAD
 # Plugin registry dependencies
 rusqlite = { version = "0.30", features = ["bundled", "uuid", "chrono", "serde_json"] }
 rusqlite_migration = "1.1"
 regex = "1.10"
 toml = "0.8"
 tempfile = "3.8"
-=======
+
 # Platform-specific monitoring
 
 [target.'cfg(unix)'.dependencies]
@@ -56,7 +55,6 @@ windows-sys = { version = "0.52", features = [
     "Win32_System_ProcessStatus",
     "Win32_System_Threading",
 ] }
->>>>>>> 84423c8fd9c4bc46e267dc9a2aa9304a215b347d
 
 # HTTP server dependencies (optional)
 axum = { version = "0.7", features = ["multipart"], optional = true }

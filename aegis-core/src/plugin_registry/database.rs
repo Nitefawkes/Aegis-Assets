@@ -6,9 +6,11 @@ use anyhow::{Result, Context, bail};
 use rusqlite::{Connection, params, OptionalExtension, Row};
 use rusqlite_migration::{Migrations, M};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use tracing::{info, debug, warn};
+use uuid::Uuid;
 
 /// Database connection wrapper
 #[derive(Clone)]

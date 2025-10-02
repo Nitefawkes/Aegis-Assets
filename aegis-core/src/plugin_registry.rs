@@ -14,6 +14,7 @@ use tracing::{info, warn, error, debug};
 mod database;
 mod models;
 mod operations;
+#[cfg(feature = "api")]
 mod api;
 mod manifest;
 mod dependency;
@@ -21,6 +22,7 @@ mod dependency;
 pub use database::*;
 pub use models::*;
 pub use operations::*;
+#[cfg(feature = "api")]
 pub use api::*;
 pub use manifest::*;
 pub use dependency::*;

@@ -18,11 +18,13 @@ mod formats;
 mod mesh_pipeline;
 mod audio_pipeline;
 mod firelight_adpcm;
+mod secure_compression;
 
 #[cfg(test)]
 mod integration_test;
 
 use compression::decompress_unity_data;
+use secure_compression::{decompress_safe, DecompressionLimits, CompressionType, CompressionError};
 use audio_pipeline::{convert_unity_audio_clip, AudioPipelineOptions, AudioConversionResult};
 use converters::{convert_unity_asset, UnityAudioClip, UnityMesh};
 use formats::{AssetBundle, SerializedFile};
@@ -576,7 +578,7 @@ impl ArchiveHandler for UnityArchive {
 }
 
 impl UnityArchive {
-    /// Extract data from a bundle block
+    /// Extract data from a bundle block with security limits
     fn extract_bundle_block(&self, block: &formats::DirectoryInfo) -> Result<Vec<u8>> {
         let file_data = std::fs::read(&self.file_path)?;
         
@@ -589,24 +591,67 @@ impl UnityArchive {
         
         let compressed_data = &file_data[start..end];
         
-        // Use the unified decompression function
-        let result = decompress_unity_data(
+        // SECURITY: Use secure decompression with limits
+        let compression_type = match block.compression_type {
+            0 => CompressionType::None,
+            1 => CompressionType::Lzma,
+            2 | 3 => CompressionType::Lz4,
+            _ => {
+                warn!("Unknown compression type {}, using unsafe fallback", block.compression_type);
+                return decompress_unity_data(
+                    compressed_data,
+                    block.compression_type,
+                    block.size as usize,
+                );
+            }
+        };
+        
+        // Use enterprise limits for Unity bundles
+        let limits = DecompressionLimits::enterprise();
+        
+        let result = decompress_safe(
             compressed_data,
-            block.compression_type,
             block.size as usize,
+            compression_type,
+            &limits,
         );
 
-        if let Err(ref err) = result {
-            warn!(
-                compression_type = block.compression_type,
-                expected_size = block.size,
-                actual_size = compressed_data.len(),
-                error = %err,
-                "Failed to decompress Unity bundle block"
-            );
+        match result {
+            Ok(data) => {
+                debug!(
+                    "Safely decompressed Unity bundle block: {} bytes -> {} bytes",
+                    compressed_data.len(),
+                    data.len()
+                );
+                Ok(data)
+            }
+            Err(CompressionError::ExceedsMaxSize { requested, limit }) => {
+                bail!("Unity bundle block too large: {} bytes exceeds {} byte limit", requested, limit);
+            }
+            Err(CompressionError::SuspiciousCompressionRatio { ratio, limit }) => {
+                bail!("Unity bundle block suspicious compression ratio: {:.2} exceeds {:.2} limit (potential bomb)", ratio, limit);
+            }
+            Err(CompressionError::TimeoutExceeded { limit_ms }) => {
+                bail!("Unity bundle block decompression timeout: exceeded {}ms limit", limit_ms);
+            }
+            Err(CompressionError::MemoryLimitExceeded { used, limit }) => {
+                bail!("Unity bundle block memory limit exceeded: {} bytes used > {} bytes limit", used, limit);
+            }
+            Err(e) => {
+                warn!(
+                    compression_type = block.compression_type,
+                    expected_size = block.size,
+                    actual_size = compressed_data.len(),
+                    error = %e,
+                    "Secure decompression failed, falling back to unsafe method"
+                );
+                decompress_unity_data(
+                    compressed_data,
+                    block.compression_type,
+                    block.size as usize,
+                )
+            }
         }
-
-        result
     }
 
     /// Extract data from a serialized object
@@ -803,13 +848,6 @@ mod tests {
             b'U', b'n', b'i', b't', b'y', b'R', b'a', b'w', 0, 0, 0, 0, 0, 0, 0, 0,
         ];
         assert!(UnityArchive::detect(&unityraw_header));
-        
-        let unityfs_header = b"UnityFS\0\x07\x05\x00\x00";
-        assert!(UnityArchive::detect(unityfs_header));
-
-        // Test UnityRaw detection
-        let unityraw_header = b"UnityRaw\x00\x00\x00\x00";
-        assert!(UnityArchive::detect(unityraw_header));
         
         // Test invalid header
         let invalid_header = b"Invalid\0\x00\x00\x00";

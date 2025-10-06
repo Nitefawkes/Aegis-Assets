@@ -5,6 +5,7 @@ use crate::{
     security::{SecurityManager, SecurityReport},
     Config, PluginRegistry,
 };
+use std::sync::Arc;
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -241,8 +242,8 @@ pub(super) fn reset_mock_peak_memory_bytes() {
 
 /// Main extraction engine
 pub struct Extractor {
-    plugin_registry: PluginRegistry,
-    compliance_checker: ComplianceChecker,
+    plugin_registry: Arc<PluginRegistry>,
+    compliance_checker: Arc<ComplianceChecker>,
     config: Config,
     security_manager: Option<SecurityManager>,
 }
@@ -252,8 +253,8 @@ impl Extractor {
     pub fn new(plugin_registry: PluginRegistry, compliance_registry: ComplianceRegistry) -> Self {
         let compliance_checker = ComplianceChecker::from_registry(compliance_registry);
         Self {
-            plugin_registry,
-            compliance_checker,
+            plugin_registry: Arc::new(plugin_registry),
+            compliance_checker: Arc::new(compliance_checker),
             config: Config::default(),
             security_manager: None,
         }
@@ -267,8 +268,8 @@ impl Extractor {
     ) -> Self {
         let compliance_checker = ComplianceChecker::from_registry(compliance_registry);
         Self {
-            plugin_registry,
-            compliance_checker,
+            plugin_registry: Arc::new(plugin_registry),
+            compliance_checker: Arc::new(compliance_checker),
             config,
             security_manager: None,
         }
@@ -277,6 +278,16 @@ impl Extractor {
     /// Get a reference to the plugin registry
     pub fn plugin_registry(&self) -> &PluginRegistry {
         &self.plugin_registry
+    }
+
+    /// Clone extractor for safe worker sharing
+    pub fn clone_for_worker(&self) -> Self {
+        Self {
+            plugin_registry: Arc::clone(&self.plugin_registry),
+            compliance_checker: Arc::clone(&self.compliance_checker),
+            config: self.config.clone(),
+            security_manager: None, // Workers don't need security manager
+        }
     }
 
     /// Get a reference to the compliance checker
@@ -412,6 +423,15 @@ impl Extractor {
         }
 
         let memory_tracker = MemoryTracker::start();
+        
+        // SECURITY: Check initial memory usage before extraction
+        let initial_memory_mb = memory_tracker.finish().unwrap_or(0);
+        if initial_memory_mb > self.config.max_memory_mb {
+            return Err(ExtractionError::MemoryLimitExceeded {
+                limit: self.config.max_memory_mb,
+                required: initial_memory_mb,
+            });
+        }
 
         // Extract resources using the handler
         let entries = handler.list_entries()?;
@@ -422,7 +442,9 @@ impl Extractor {
         let mut resources = Vec::new();
         let mut total_extracted_bytes = 0u64;
         
-        for entry in entries {
+        info!("Starting extraction of {} entries with memory limit: {}MB", entries.len(), self.config.max_memory_mb);
+        
+        for (index, entry) in entries.into_iter().enumerate() {
             let resource_type = match entry.file_type.as_deref() {
                 Some("texture") => crate::resource::ResourceType::Texture,
                 Some("mesh") => crate::resource::ResourceType::Mesh,
@@ -430,10 +452,35 @@ impl Extractor {
                 _ => crate::resource::ResourceType::Generic,
             };
 
+            // SECURITY: Check memory usage before each entry extraction
+            if index % 10 == 0 && index > 0 {
+                let current_memory_mb = MemoryTracker::start().finish().unwrap_or(0);
+                if current_memory_mb > self.config.max_memory_mb {
+                    warn!("Memory limit exceeded during extraction at entry {}: {}MB > {}MB", 
+                          index, current_memory_mb, self.config.max_memory_mb);
+                    return Err(ExtractionError::MemoryLimitExceeded {
+                        limit: self.config.max_memory_mb,
+                        required: current_memory_mb,
+                    });
+                }
+                info!("Memory check at entry {}: {}MB/{} MB", index, current_memory_mb, self.config.max_memory_mb);
+            }
+            
             // Actually read the entry data through the handler
             match handler.read_entry(&entry.id) {
                 Ok(entry_data) => {
                     let actual_size = entry_data.len() as u64;
+                    
+                    // SECURITY: Check if this entry would exceed our memory budget
+                    let estimated_memory_mb = (total_extracted_bytes + actual_size) / (1024 * 1024);
+                    if estimated_memory_mb > self.config.max_memory_mb as u64 {
+                        warn!("Single entry {} would exceed memory limit: {} MB", entry.name, estimated_memory_mb);
+                        return Err(ExtractionError::MemoryLimitExceeded {
+                            limit: self.config.max_memory_mb,
+                            required: estimated_memory_mb as usize,
+                        });
+                    }
+                    
                     total_extracted_bytes += actual_size;
                     
                     // Store the actual data in metadata for now
@@ -580,9 +627,8 @@ pub struct ExtractionStats {
     pub average_processing_time_ms: u64,
 }
 
-// Safe implementations since we're not actually using raw pointers yet
-unsafe impl Send for Extractor {}
-unsafe impl Sync for Extractor {}
+// Extractor is now automatically Send + Sync because Arc<T> is Send + Sync when T: Send + Sync
+// REMOVED UNSAFE MANUAL IMPLEMENTATIONS - Arc handles this safely
 
 #[cfg(test)]
 mod tests {

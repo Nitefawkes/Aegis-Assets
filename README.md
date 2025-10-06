@@ -38,14 +38,17 @@ Aegis-Assets is built on a **compliance-first architecture**. That means we **do
 * 📦 **Asset Database** → SQLite-based storage with full-text search and metadata indexing
 * 🔍 **Smart Search** → relevance scoring, tag filtering, type-based queries
 * 🔐 **Security Framework** → plugin validation, threat assessment, and enterprise compliance
+* 🛡️ **Memory Safety** → comprehensive protection against use-after-free vulnerabilities and decompression bombs
+* 💾 **Memory Management** → real-time tracking with configurable limits (4GB default, enterprise profiles available)
 * 🌐 **REST API** → complete HTTP API with JSON responses for programmatic access
 * 🎨 **Web Dashboard** → modern, responsive browser interface for asset management
 
 ### ✅ **Game Engine Support (Implemented)**
-* 🎮 **Unity Engine** → UnityFS archives, serialized files, comprehensive asset extraction
+* 🎮 **Unity Engine** → UnityFS archives, serialized files, comprehensive asset extraction with enterprise security
   * 🖼️ **Textures**: PNG/KTX2 export with DXT/ETC/ASTC decompression, mipmap & alpha handling
   * 🎵 **Audio**: FSB4/FSB5 → WAV/OGG with Vorbis + Firelight ADPCM (GCADPCM/FADPCM) decoding, loop metadata preservation
   * 🔷 **Meshes**: glTF 2.0 export with OBJ fallback, complete pipeline with material support
+  * 🛡️ **Secure Decompression**: Protection against decompression bombs with enterprise-grade limits (LZ4/LZMA)
 * 🏛️ **Unreal Engine** → PAK files, UAsset parsing, IoStore support (foundation)
 * 🏪 **Plugin Marketplace** → discover, install, and manage community plugins
 

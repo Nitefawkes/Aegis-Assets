@@ -943,7 +943,7 @@ impl UnityMesh {
     }
 
     /// Get position bounds for glTF accessor
-    fn get_position_bounds(&self) -> (Vec<f32>, Vec<f32>) {
+    pub fn get_position_bounds(&self) -> (Vec<f32>, Vec<f32>) {
         if self.vertices.is_empty() {
             return (vec![0.0, 0.0, 0.0], vec![0.0, 0.0, 0.0]);
         }

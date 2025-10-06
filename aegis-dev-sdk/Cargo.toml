@@ -1,0 +1,68 @@
+[package]
+name = "aegis-dev-sdk"
+version.workspace = true
+edition = "2021"
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Developer SDK and toolkit for building Aegis-Assets plugins"
+keywords = ["sdk", "dev-tools", "plugin", "template", "scaffolding"]
+
+[[bin]]
+name = "aegis-dev"
+path = "src/main.rs"
+
+[dependencies]
+# Core aegis dependencies
+aegis-core = { path = "../aegis-core" }
+aegis-security = { path = "../aegis-security" }
+
+# Workspace dependencies
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+chrono.workspace = true
+tokio = { workspace = true, features = ["full"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+# CLI and interactive tools
+clap = { version = "4.4", features = ["derive"] }
+dialoguer = "0.11"
+console = "0.15"
+colored = "2.1"
+indicatif = "0.17"
+
+# Code generation and templates
+handlebars = "5.1"
+toml_edit = "0.21"
+regex = "1.10"
+walkdir = "2.4"
+
+# File operations and compression
+tar = "0.4"
+flate2 = "1.0"
+zip = "0.6"
+
+# Development tools
+notify = "6.1"
+ignore = "0.4"
+
+# Testing framework
+cargo_metadata = "0.18"
+
+# Documentation generation
+mdbook = { version = "0.4", optional = true }
+
+# Hot reload dependencies
+notify-debouncer-mini = "0.4"
+
+[features]
+default = ["docs"]
+docs = ["mdbook"]
+hot-reload = []
+
+[dev-dependencies]
+tempfile = "3.8"

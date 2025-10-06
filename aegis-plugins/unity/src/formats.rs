@@ -3,7 +3,7 @@ use byteorder::{BigEndian, LittleEndian, ReadBytesExt};
 use std::collections::HashMap;
 use std::io::{Cursor, Read, Seek, SeekFrom};
 use crate::compression::decompress_unity_data;
-use tracing::warn;
+use tracing::{info, warn};
 
 /// Unity engine version information
 #[derive(Debug, Clone)]
@@ -247,16 +247,111 @@ impl AssetBundle {
     ) -> Result<Vec<DirectoryInfo>> {
         let mut directory_info = Vec::new();
         
-        // For now, create a basic directory entry for the main asset file
-        // Real implementation would parse the actual directory structure
-        if !blocks_info.is_empty() {
+        // Parse the actual directory info table
+        // The directory info is stored after the blocks info in the header
+        
+        // Read number of directory entries
+        let entry_count = match cursor.read_u32::<BigEndian>() {
+            Ok(count) => count,
+            Err(_) => {
+                // If we can't read entry count, fall back to creating entries from blocks
+                warn!("Could not read directory entry count, creating entries from blocks");
+                return Self::create_directory_from_blocks(blocks_info, flags);
+            }
+        };
+        
+        info!("Reading {} directory entries", entry_count);
+        
+        for i in 0..entry_count {
+            match Self::read_directory_entry(cursor, blocks_info, flags) {
+                Ok(entry) => {
+                    info!("Parsed directory entry: {} (size: {}, compressed: {})", 
+                          entry.name, entry.size, entry.compressed_size);
+                    directory_info.push(entry);
+                }
+                Err(e) => {
+                    warn!("Failed to read directory entry {}: {}", i, e);
+                    // Continue reading other entries even if one fails
+                }
+            }
+        }
+        
+        // If we didn't get any entries from the directory table, fall back to blocks
+        if directory_info.is_empty() {
+            warn!("No directory entries parsed, falling back to block-based approach");
+            return Self::create_directory_from_blocks(blocks_info, flags);
+        }
+        
+        Ok(directory_info)
+    }
+    
+    /// Read a single directory entry from the cursor
+    fn read_directory_entry(
+        cursor: &mut Cursor<&[u8]>,
+        blocks_info: &[BlockInfo],
+        _flags: u32,
+    ) -> Result<DirectoryInfo> {
+        // Read entry offset and size
+        let offset = cursor.read_u64::<BigEndian>()?;
+        let size = cursor.read_u64::<BigEndian>()?;
+        let entry_flags = cursor.read_u32::<BigEndian>()?;
+        
+        // Read null-terminated name
+        let name = Self::read_null_terminated_string(cursor)?;
+        
+        // Find corresponding block to get compression info
+        let (compressed_size, compression_type) = 
+            Self::find_block_for_entry(offset, size, blocks_info);
+        
+        Ok(DirectoryInfo {
+            offset,
+            size,
+            flags: entry_flags,
+            name,
+            compressed_size,
+            compression_type,
+        })
+    }
+    
+    /// Find the block that contains data for a directory entry
+    fn find_block_for_entry(
+        entry_offset: u64,
+        entry_size: u64,
+        blocks_info: &[BlockInfo],
+    ) -> (u64, u32) {
+        // Look for a block that might contain this entry
+        for block in blocks_info {
+            if block.uncompressed_size as u64 >= entry_size {
+                return (block.compressed_size as u64, 0); // TODO: Get real compression type
+            }
+        }
+        
+        // Default fallback
+        (entry_size, 0)
+    }
+    
+    /// Create directory entries from block information as fallback
+    fn create_directory_from_blocks(
+        blocks_info: &[BlockInfo],
+        flags: u32,
+    ) -> Result<Vec<DirectoryInfo>> {
+        let mut directory_info = Vec::new();
+        let compression_type = (flags >> 6) & 0x3F;
+        
+        for (i, block) in blocks_info.iter().enumerate() {
+            // Calculate offset based on preceding blocks
+            let offset = blocks_info.iter()
+                .take(i)
+                .map(|b| b.compressed_size as u64)
+                .sum::<u64>();
+                
             directory_info.push(DirectoryInfo {
-                offset: 0,
-                size: blocks_info[0].uncompressed_size as u64,
+                offset,
+                size: block.uncompressed_size as u64,
                 flags: 0,
-                name: "CAB-archive".to_string(), // Common Unity archive name
-                compressed_size: blocks_info[0].compressed_size as u64,
-                compression_type: (flags >> 6) & 0x3F,
+                name: format!("Block_{}", i),
+                compressed_size: block.compressed_size as u64,
+                compression_type,
             });
         }
         

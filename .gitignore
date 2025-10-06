@@ -60,6 +60,8 @@ final_demo_extraction/
 real_*/
 user_demo/
 unreal_test/
+output/
+docs/artifacts/
 
 # Database files (generated)
 *.db

@@ -138,6 +138,10 @@ pub enum AudioFormat {
     OGG,
     WAV,
     FLAC,
+    /// Vorbis codec (usually in OGG container)
+    Vorbis,
+    /// Opus codec (modern low-latency codec)
+    Opus,
 }
 
 /// Vertex data for mesh geometry

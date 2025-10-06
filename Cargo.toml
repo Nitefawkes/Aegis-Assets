@@ -1,8 +1,11 @@
 [workspace]
 members = [
     "aegis-core",
-    "aegis-python",
+    "aegis-python", 
     "aegis-cli",
+    "aegis-web-bridge",
+    "aegis-security",
+    "aegis-dev-sdk",
     "aegis-plugins/unity",
     "aegis-plugins/unreal",
 ]

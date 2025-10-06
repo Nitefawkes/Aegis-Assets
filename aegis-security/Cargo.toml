@@ -1,0 +1,79 @@
+[package]
+name = "aegis-security"
+version = "0.1.0"
+edition = "2021"
+description = "Security scanning and compliance automation for Aegis-Assets"
+license = "MIT"
+
+[dependencies]
+# Core Aegis dependencies
+aegis-core = { path = "../aegis-core" }
+
+# Cryptography and security
+ed25519-dalek = "2.0"
+sha2 = "0.10"
+blake3 = "1.5"
+ring = "0.17"
+x509-cert = "0.2"
+
+# Static analysis and parsing
+syn = { version = "2.0", features = ["full", "extra-traits", "visit"] }
+regex = "1.10"
+tree-sitter = "0.20"
+tree-sitter-rust = "0.20"
+
+# Network and external services
+reqwest = { version = "0.11", features = ["json"] }
+rustsec = "0.28"
+
+# Serialization and data
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+toml = "0.8"
+
+# Async and performance
+tokio = { version = "1.0", features = ["full"] }
+async-trait = "0.1"
+rayon = "1.8"
+dashmap = "5.5"
+
+# File system and compression
+walkdir = "2.4"
+tar = "0.4"
+flate2 = "1.0"
+zip = "0.6"
+
+# Database and storage
+rusqlite = { version = "0.30", features = ["bundled"] }
+rusqlite_migration = "1.1"
+
+# Logging and metrics
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+metrics = "0.21"
+
+# Error handling and utilities
+anyhow = "1.0"
+thiserror = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.0", features = ["v4", "serde"] }
+base64 = "0.21"
+hex = "0.4"
+rand = "0.8"
+tempfile = "3.8"
+
+# System integration
+nix = "0.27"
+libc = "0.2"
+
+[features]
+default = ["static-analysis", "malware-detection"]
+static-analysis = []
+malware-detection = []
+enterprise = ["audit-logs", "policy-engine"]
+audit-logs = []
+policy-engine = []
+
+[dev-dependencies]
+tempfile = "3.8"

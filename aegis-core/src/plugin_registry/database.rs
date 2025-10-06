@@ -72,6 +72,40 @@ impl DatabaseConnection {
     pub fn connection(&self) -> &Arc<Mutex<Connection>> {
         &self.conn
     }
+    
+    /// Execute a statement with parameters
+    pub fn execute<P>(&self, sql: &str, params: P) -> Result<usize>
+    where
+        P: rusqlite::Params,
+    {
+        self.with_connection(|conn| {
+            conn.execute(sql, params)
+                .context("Failed to execute statement")
+        })
+    }
+    
+    /// Query a single row
+    pub fn query_row<T, F, P>(&self, sql: &str, params: P, f: F) -> Result<T>
+    where
+        F: FnOnce(&rusqlite::Row<'_>) -> rusqlite::Result<T>,
+        P: rusqlite::Params,
+    {
+        self.with_connection(|conn| {
+            conn.query_row(sql, params, f)
+                .context("Failed to query row")
+        })
+    }
+    
+    /// Prepare a statement and execute a closure with it
+    pub fn prepare_and_execute<T, F>(&self, sql: &str, f: F) -> Result<T>
+    where
+        F: FnOnce(&mut rusqlite::Statement<'_>) -> Result<T>,
+    {
+        self.with_connection(|conn| {
+            let mut stmt = conn.prepare(sql)?;
+            f(&mut stmt)
+        })
+    }
 }
 
 // Use types from models module
@@ -213,9 +247,7 @@ impl DatabaseOperations for DatabaseConnection {
     }
 
     fn get_plugin_versions(&self, plugin_name: &str) -> Result<Vec<crate::plugin_registry::PluginVersion>> {
-        let conn = &self.conn;
-
-        let mut stmt = conn.prepare(
+        self.prepare_and_execute(
             r#"
             SELECT pv.id, pv.plugin_id, pv.version, pv.status, pv.package_size,
                    pv.package_hash, pv.manifest, pv.signature_data, pv.published_at
@@ -232,21 +264,19 @@ impl DatabaseOperations for DatabaseConnection {
                     ELSE CAST(SUBSTR(pv.version, INSTR(pv.version, '.') + 1,
                            INSTR(SUBSTR(pv.version, INSTR(pv.version, '.') + 1) || '.') - 1) AS INTEGER)
                 END DESC
-            "#
-        )?;
-
-        let versions = stmt.query_map([plugin_name], |row| self.row_to_plugin_version(row))
-            .context("Failed to query plugin versions")?
-            .collect::<Result<Vec<_>, _>>()
-            .context("Failed to collect plugin versions")?;
-
-        Ok(versions)
+            "#,
+            |stmt| {
+                let versions = stmt.query_map([plugin_name], |row| self.row_to_plugin_version(row))
+                    .context("Failed to query plugin versions")?
+                    .collect::<Result<Vec<_>, _>>()
+                    .context("Failed to collect plugin versions")?;
+                Ok(versions)
+            }
+        )
     }
 
     fn get_latest_version(&self, plugin_name: &str) -> Result<Option<crate::plugin_registry::PluginVersion>> {
-        let conn = &self.conn;
-
-        let mut stmt = conn.prepare(
+        self.prepare_and_execute(
             r#"
             SELECT pv.id, pv.plugin_id, pv.version, pv.status, pv.package_size,
                    pv.package_hash, pv.manifest, pv.signature_data, pv.published_at
@@ -264,14 +294,14 @@ impl DatabaseOperations for DatabaseConnection {
                            INSTR(SUBSTR(pv.version, INSTR(pv.version, '.') + 1) || '.') - 1) AS INTEGER)
                 END DESC
             LIMIT 1
-            "#
-        )?;
-
-        let result = stmt.query_row([plugin_name], |row| self.row_to_plugin_version(row))
-            .optional()
-            .context("Failed to query latest plugin version")?;
-
-        Ok(result)
+            "#,
+            |stmt| {
+                let result = stmt.query_row([plugin_name], |row| self.row_to_plugin_version(row))
+                    .optional()
+                    .context("Failed to query latest plugin version")?;
+                Ok(result)
+            }
+        )
     }
 
     fn register_plugin_version(

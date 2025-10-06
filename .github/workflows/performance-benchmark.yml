@@ -1,0 +1,300 @@
+name: Performance Benchmark
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'aegis-core/**'
+      - 'aegis-plugins/**'
+      - 'tools/bench/**'
+      - 'testdata/**'
+      - '.github/workflows/performance-benchmark.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'aegis-core/**'
+      - 'aegis-plugins/**'
+      - 'tools/bench/**'
+      - 'testdata/**'
+  schedule:
+    # Run daily at 2 AM UTC to catch performance regressions
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      stress_test:
+        description: 'Run stress tests'
+        required: false
+        default: 'false'
+        type: boolean
+      generate_golden:
+        description: 'Generate golden test outputs'
+        required: false
+        default: 'false'
+        type: boolean
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  benchmark:
+    name: Performance Benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        lfs: true  # Pull golden test artifacts from Git LFS
+
+    - name: Setup Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        profile: minimal
+        override: true
+        components: rustfmt, clippy
+
+    - name: Setup Rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        # Cache key includes corpus files for benchmark consistency
+        key: benchmark-v1-${{ hashFiles('testdata/**/*') }}
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          libasound2-dev \
+          libssl-dev \
+          pkg-config \
+          build-essential
+
+    - name: Build benchmark tool
+      run: |
+        cd tools/bench
+        cargo build --release
+        echo "$(pwd)/target/release" >> $GITHUB_PATH
+
+    - name: Validate test corpus
+      run: |
+        cargo run --bin bench -- validate --corpus testdata/unity/
+      continue-on-error: true  # Don't fail if corpus is incomplete
+
+    - name: Run performance benchmarks
+      id: benchmark
+      run: |
+        # Create results directory
+        mkdir -p benchmark-results
+        
+        # Run benchmark suite with JSON output
+        cargo run --bin bench -- run \
+          --corpus testdata/unity/ \
+          --iterations 3 \
+          --format json \
+          --output benchmark-results/results.json \
+          --profile-memory \
+          --validate-streaming \
+          --memory-limit 300 \
+          --throughput-min 120
+        
+        # Store exit code for later use
+        echo "benchmark_exit_code=$?" >> $GITHUB_OUTPUT
+
+    - name: Analyze benchmark results
+      id: analysis
+      run: |
+        # Extract key metrics from JSON results
+        if [ -f benchmark-results/results.json ]; then
+          cat benchmark-results/results.json | jq -r '
+            "performance_grade=" + .summary.performance_grade,
+            "avg_throughput=" + (.summary.avg_throughput_mbps | tostring),
+            "p95_memory=" + (.summary.p95_memory_mb | tostring),
+            "p95_throughput=" + (.summary.p95_throughput_mbps | tostring),
+            "streaming_success_rate=" + (.summary.streaming_success_rate | tostring)
+          ' >> $GITHUB_OUTPUT
+          
+          # Check for performance regression
+          GRADE=$(cat benchmark-results/results.json | jq -r '.summary.performance_grade')
+          P95_MEMORY=$(cat benchmark-results/results.json | jq -r '.summary.p95_memory_mb')
+          P95_THROUGHPUT=$(cat benchmark-results/results.json | jq -r '.summary.p95_throughput_mbps')
+          
+          echo "Performance Grade: $GRADE"
+          echo "P95 Memory: ${P95_MEMORY}MB"
+          echo "P95 Throughput: ${P95_THROUGHPUT}MB/s"
+          
+          # Fail CI if performance is unacceptable
+          if [ "$GRADE" = "F" ]; then
+            echo "❌ Performance grade F - failing CI"
+            exit 1
+          fi
+          
+          # Warn on memory limit violation
+          if (( $(echo "$P95_MEMORY > 300" | bc -l) )); then
+            echo "⚠️ Memory limit exceeded: ${P95_MEMORY}MB > 300MB"
+            echo "memory_warning=true" >> $GITHUB_OUTPUT
+          fi
+          
+          # Warn on throughput below threshold
+          if (( $(echo "$P95_THROUGHPUT < 120" | bc -l) )); then
+            echo "⚠️ Throughput below threshold: ${P95_THROUGHPUT}MB/s < 120MB/s"
+            echo "throughput_warning=true" >> $GITHUB_OUTPUT
+          fi
+        else
+          echo "❌ Benchmark results file not found"
+          exit 1
+        fi
+
+    - name: Compare with baseline (if available)
+      id: regression_check
+      run: |
+        # Download baseline results from previous successful run
+        BASELINE_URL="https://api.github.com/repos/${{ github.repository }}/actions/artifacts"
+        
+        # This would typically download and compare against historical results
+        # For now, we'll just log that this step would happen
+        echo "🔍 Baseline comparison would happen here"
+        echo "📊 Historical performance tracking not yet implemented"
+        
+        # Future: Download baseline.json, compare metrics, set regression flags
+
+    - name: Generate performance report
+      if: always()
+      run: |
+        # Generate human-readable report
+        if [ -f benchmark-results/results.json ]; then
+          cargo run --bin bench -- report \
+            --results benchmark-results/results.json \
+            --detailed \
+            --format table \
+            --output benchmark-results/report.txt
+          
+          echo "📊 Performance Report:"
+          cat benchmark-results/report.txt
+        fi
+
+    - name: Run stress tests (optional)
+      if: github.event.inputs.stress_test == 'true'
+      run: |
+        echo "🔥 Running stress tests..."
+        # This would run extended stress testing
+        # cargo run --bin stress-test -- --corpus testdata/unity/ --duration 300s
+        echo "Stress testing not yet implemented"
+
+    - name: Generate golden outputs (if requested)
+      if: github.event.inputs.generate_golden == 'true'
+      run: |
+        echo "✨ Generating golden test outputs..."
+        # This would generate new golden reference files
+        # cargo run --bin bench -- run --corpus testdata/unity/ --generate-golden docs/artifacts/
+        echo "Golden output generation not yet implemented"
+
+    - name: Upload benchmark results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: benchmark-results-${{ github.sha }}
+        path: benchmark-results/
+        retention-days: 30
+
+    - name: Comment on PR (if applicable)
+      uses: actions/github-script@v7
+      if: github.event_name == 'pull_request' && always()
+      with:
+        script: |
+          const fs = require('fs');
+          
+          if (!fs.existsSync('benchmark-results/results.json')) {
+            return;
+          }
+          
+          const results = JSON.parse(fs.readFileSync('benchmark-results/results.json', 'utf8'));
+          const summary = results.summary;
+          
+          // Create performance report for PR comment
+          const gradeEmoji = {
+            'A': '🎉',
+            'B': '✅', 
+            'C': '⚠️',
+            'D': '⚠️',
+            'F': '❌'
+          };
+          
+          const body = `## 📊 Performance Benchmark Results
+          
+          **Performance Grade:** ${gradeEmoji[summary.performance_grade] || '❓'} **${summary.performance_grade}**
+          
+          ### Key Metrics
+          - **Average Throughput:** ${summary.avg_throughput_mbps.toFixed(1)} MB/s
+          - **P95 Throughput:** ${summary.p95_throughput_mbps.toFixed(1)} MB/s (target: ≥120 MB/s)
+          - **P95 Memory Usage:** ${summary.p95_memory_mb.toFixed(1)} MB (limit: ≤300 MB)
+          - **Files Processed:** ${summary.total_files}
+          - **Streaming Success Rate:** ${(summary.streaming_success_rate * 100).toFixed(1)}%
+          
+          ### Status
+          ${summary.performance_grade === 'F' ? '❌ **Performance regression detected**' : ''}
+          ${summary.p95_memory_mb > 300 ? '⚠️ **Memory limit exceeded**' : ''}
+          ${summary.p95_throughput_mbps < 120 ? '⚠️ **Throughput below threshold**' : ''}
+          
+          <details>
+          <summary>📁 Detailed Results</summary>
+          
+          ${results.file_results.map(file => 
+            `**${file.filename}** (${(file.file_size_bytes / 1024 / 1024).toFixed(1)}MB)
+            - Duration: ${file.statistics.mean_duration_ms.toFixed(0)}ms
+            - Throughput: ${file.statistics.mean_throughput_mbps.toFixed(1)} MB/s
+            - Memory: ${file.statistics.p95_memory_mb.toFixed(1)} MB`
+          ).join('\n\n')}
+          
+          </details>
+          
+          [View full results](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          `;
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: body
+          });
+
+    - name: Update performance tracking
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      run: |
+        # This would update long-term performance tracking database
+        echo "📈 Would update performance tracking database"
+        echo "Commit: ${{ github.sha }}"
+        echo "Results available at: benchmark-results/results.json"
+
+  # Job for validating golden tests (when they exist)
+  golden_tests:
+    name: Golden Test Validation
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        lfs: true
+
+    - name: Setup Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        profile: minimal
+        override: true
+
+    - name: Build project
+      run: cargo build --release
+
+    - name: Run golden tests
+      run: |
+        # This would run golden test validation
+        echo "🔍 Golden test validation would happen here"
+        echo "Currently no golden tests implemented yet"
+        
+        # Future implementation:
+        # cargo test --test golden_validation
+        # cargo run --bin bench -- validate --golden docs/artifacts/

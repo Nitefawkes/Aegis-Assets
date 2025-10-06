@@ -54,13 +54,12 @@ impl PluginFactory for UnrealPluginFactory {
         Ok(Box::new(handler))
     }
     
-    fn compliance_info(&self) -> PluginInfo {
-        PluginInfo {
-            name: "Unreal Engine".to_string(),
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            author: Some("Aegis-Assets Team".to_string()),
-            compliance_verified: true,
-        }
+    fn compliance_info(&self) -> aegis_core::PluginInfo {
+        aegis_core::PluginInfo::new(
+            "Unreal Engine".to_string(),
+            env!("CARGO_PKG_VERSION").to_string(),
+            vec!["pak".to_string(), "uasset".to_string(), "umap".to_string(), "utoc".to_string()]
+        )
     }
 }
 

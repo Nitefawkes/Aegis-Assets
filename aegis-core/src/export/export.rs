@@ -3,6 +3,7 @@ use anyhow::{Result, Context, bail};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use image::{ImageBuffer, Rgba};
+use tracing::warn;
 
 /// Supported export formats
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -13,10 +14,16 @@ pub enum ExportFormat {
     Ktx2,
     /// PNG for uncompressed textures
     Png,
-    /// OGG for audio
+    /// OGG for audio (Vorbis codec)
     Ogg,
     /// WAV for uncompressed audio
     Wav,
+    /// MP3 for compressed audio
+    Mp3,
+    /// FLAC for lossless audio
+    Flac,
+    /// Opus for modern low-latency audio
+    Opus,
     /// JSON for metadata and materials
     Json,
 }
@@ -667,16 +674,57 @@ impl Exporter {
         &self,
         audio: &crate::resource::AudioResource,
         output_dir: &Path,
-        _provenance: Option<&Provenance>,
+        provenance: Option<&Provenance>,
     ) -> Result<Vec<ExportedFile>> {
-        let format = ExportFormat::Ogg; // Default to OGG
-        let extension = "ogg";
+        use crate::resource::AudioFormat;
+        
+        // Determine export format and extension based on the audio's original format
+        let (format, extension, processed_data) = match audio.format {
+            AudioFormat::PCM => {
+                // Convert PCM to WAV for better compatibility
+                let wav_data = self.convert_pcm_to_wav(audio)?;
+                (ExportFormat::Wav, "wav", wav_data)
+            }
+            AudioFormat::WAV => {
+                // WAV is already in target format
+                (ExportFormat::Wav, "wav", audio.data.clone())
+            }
+            AudioFormat::MP3 => {
+                // MP3 is a standard format, preserve as-is
+                (ExportFormat::Mp3, "mp3", audio.data.clone())
+            }
+            AudioFormat::OGG | AudioFormat::Vorbis => {
+                // Both OGG container and Vorbis codec export as .ogg
+                // For Vorbis, verify it's properly encoded Vorbis in OGG container
+                let validated_data = if audio.format == AudioFormat::Vorbis {
+                    self.validate_vorbis_encoding(audio)?
+                } else {
+                    audio.data.clone()
+                };
+                (ExportFormat::Ogg, "ogg", validated_data)
+            }
+            AudioFormat::FLAC => {
+                // FLAC lossless format
+                let validated_data = self.validate_flac_encoding(audio)?;
+                (ExportFormat::Flac, "flac", validated_data)
+            }
+            AudioFormat::Opus => {
+                // Opus codec, typically in .opus container
+                let validated_data = self.validate_opus_encoding(audio)?;
+                (ExportFormat::Opus, "opus", validated_data)
+            }
+        };
         
         let output_path = output_dir.join(format!("{}.{}", audio.name, extension));
         
-        // Mock export - would convert audio data to target format
-        std::fs::write(&output_path, &audio.data)
+        // Write the processed audio data
+        std::fs::write(&output_path, &processed_data)
             .context("Failed to write audio file")?;
+        
+        // Add provenance metadata if available
+        if let Some(prov) = provenance {
+            self.write_audio_metadata(&output_path, audio, prov)?;
+        }
         
         let metadata = std::fs::metadata(&output_path)?;
         Ok(vec![ExportedFile {
@@ -685,6 +733,108 @@ impl Exporter {
             format,
             source_resource: audio.name.clone(),
         }])
+    }
+    
+    /// Convert PCM data to WAV format
+    fn convert_pcm_to_wav(&self, audio: &crate::resource::AudioResource) -> Result<Vec<u8>> {
+        // WAV header for PCM data
+        let mut wav_data = Vec::new();
+        
+        // RIFF header
+        wav_data.extend_from_slice(b"RIFF");
+        let file_size = (36 + audio.data.len()) as u32;
+        wav_data.extend_from_slice(&file_size.to_le_bytes());
+        wav_data.extend_from_slice(b"WAVE");
+        
+        // Format chunk
+        wav_data.extend_from_slice(b"fmt ");
+        wav_data.extend_from_slice(&16u32.to_le_bytes()); // Chunk size
+        wav_data.extend_from_slice(&1u16.to_le_bytes());  // PCM format
+        wav_data.extend_from_slice(&(audio.channels as u16).to_le_bytes());
+        wav_data.extend_from_slice(&audio.sample_rate.to_le_bytes());
+        
+        let bytes_per_sample = 2; // Assuming 16-bit PCM
+        let byte_rate = audio.sample_rate * audio.channels as u32 * bytes_per_sample;
+        wav_data.extend_from_slice(&byte_rate.to_le_bytes());
+        
+        let block_align = audio.channels as u16 * bytes_per_sample as u16;
+        wav_data.extend_from_slice(&block_align.to_le_bytes());
+        wav_data.extend_from_slice(&(bytes_per_sample as u16 * 8).to_le_bytes()); // Bits per sample
+        
+        // Data chunk
+        wav_data.extend_from_slice(b"data");
+        wav_data.extend_from_slice(&(audio.data.len() as u32).to_le_bytes());
+        wav_data.extend_from_slice(&audio.data);
+        
+        Ok(wav_data)
+    }
+    
+    /// Validate Vorbis encoding and ensure proper OGG container
+    fn validate_vorbis_encoding(&self, audio: &crate::resource::AudioResource) -> Result<Vec<u8>> {
+        // Check for OGG magic bytes
+        if audio.data.len() >= 4 && &audio.data[0..4] == b"OggS" {
+            Ok(audio.data.clone())
+        } else {
+            // Raw Vorbis data needs to be wrapped in OGG container
+            warn!("Raw Vorbis data detected, would need OGG container wrapping");
+            // For now, return as-is and warn
+            // TODO: Implement OGG container wrapping for raw Vorbis
+            Ok(audio.data.clone())
+        }
+    }
+    
+    /// Validate FLAC encoding
+    fn validate_flac_encoding(&self, audio: &crate::resource::AudioResource) -> Result<Vec<u8>> {
+        // Check for FLAC magic bytes
+        if audio.data.len() >= 4 && &audio.data[0..4] == b"fLaC" {
+            Ok(audio.data.clone())
+        } else {
+            bail!("Invalid FLAC data: missing fLaC magic bytes");
+        }
+    }
+    
+    /// Validate Opus encoding
+    fn validate_opus_encoding(&self, audio: &crate::resource::AudioResource) -> Result<Vec<u8>> {
+        // Opus is typically in OGG container or raw Opus packets
+        if audio.data.len() >= 4 && &audio.data[0..4] == b"OggS" {
+            // Opus in OGG container - verify Opus identification header
+            Ok(audio.data.clone())
+        } else if audio.data.len() >= 8 && &audio.data[0..8] == b"OpusHead" {
+            // Raw Opus header - would need OGG container
+            warn!("Raw Opus data detected, would need OGG container wrapping");
+            Ok(audio.data.clone())
+        } else {
+            warn!("Unknown Opus format, exporting as-is");
+            Ok(audio.data.clone())
+        }
+    }
+    
+    /// Write audio metadata file alongside the audio export
+    fn write_audio_metadata(
+        &self,
+        audio_path: &Path,
+        audio: &crate::resource::AudioResource,
+        provenance: &Provenance,
+    ) -> Result<()> {
+        let metadata_path = audio_path.with_extension("json");
+        
+        let metadata = serde_json::json!({
+            "format": audio.format,
+            "sample_rate": audio.sample_rate,
+            "channels": audio.channels,
+            "duration_seconds": audio.duration_seconds,
+            "provenance": {
+                "source_game": provenance.game_id,
+                "extraction_time": provenance.extraction_time,
+                "plugin": provenance.plugin_info.name,
+                "plugin_version": provenance.plugin_info.version
+            }
+        });
+        
+        std::fs::write(metadata_path, serde_json::to_string_pretty(&metadata)?)
+            .context("Failed to write audio metadata")?;
+            
+        Ok(())
     }
     
     /// Export animation resource

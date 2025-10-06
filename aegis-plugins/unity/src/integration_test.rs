@@ -48,8 +48,9 @@ mod integration_tests {
         
         // Test compliance info
         let compliance = factory.compliance_info();
-        assert_eq!(compliance.name, "Unity");
-        assert!(compliance.compliance_verified);
+        assert_eq!(compliance.name(), "Unity");
+        // PluginInfo doesn't have compliance_verified field anymore
+        // assert!(compliance.compliance_verified);
     }
     
     #[test]

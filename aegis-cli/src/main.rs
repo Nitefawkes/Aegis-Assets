@@ -564,50 +564,42 @@ fn handle_list_assets(
     let header_preview = if header.len() > 1024 { &header[..1024] } else { &header };
     
     // Find suitable plugin
-    if let Some(plugin_factory) = plugin_registry.find_handler(input, header_preview) {
+    if let Some((handler, plugin_info)) = plugin_registry.find_handler_with_info(input, header_preview) {
         println!("📋 File: {}", input.display());
-        println!("🔌 Plugin: {} v{}", plugin_factory.name(), plugin_factory.version());
+        println!("🔌 Plugin: {} v{}", plugin_info.name(), plugin_info.version());
         
-        // Create handler and list entries
-        match plugin_factory.create_handler(input) {
-            Ok(handler) => {
-                match handler.list_entries() {
-                    Ok(entries) => {
-                        println!("📦 Assets found: {}", entries.len());
-                        
-                        if details {
-                            println!("\n📝 Asset details:");
-                            for entry in &entries {
-                                println!("   • {} ({})", entry.name, entry.file_type.as_deref().unwrap_or("unknown"));
-                                println!("     Size: {} bytes", entry.size_uncompressed);
-                                if let Some(compressed) = entry.size_compressed {
-                                    let ratio = (1.0 - compressed as f64 / entry.size_uncompressed as f64) * 100.0;
-                                    println!("     Compressed: {} bytes ({:.1}% reduction)", compressed, ratio);
-                                }
-                            }
-                        } else {
-                            // Group by type
-                            let mut type_counts = std::collections::HashMap::new();
-                            for entry in &entries {
-                                let entry_type = entry.file_type.as_deref().unwrap_or("unknown");
-                                *type_counts.entry(entry_type).or_insert(0) += 1;
-                            }
-                            
-                            println!("\n📊 Asset types:");
-                            for (asset_type, count) in type_counts {
-                                println!("   • {}: {} files", asset_type, count);
-                            }
+        // Use handler directly to list entries
+        match handler.list_entries() {
+            Ok(entries) => {
+                println!("📦 Assets found: {}", entries.len());
+                
+                if details {
+                    println!("\n📝 Asset details:");
+                    for entry in &entries {
+                        println!("   • {} ({})", entry.name, entry.file_type.as_deref().unwrap_or("unknown"));
+                        println!("     Size: {} bytes", entry.size_uncompressed);
+                        if let Some(compressed) = entry.size_compressed {
+                            let ratio = (1.0 - compressed as f64 / entry.size_uncompressed as f64) * 100.0;
+                            println!("     Compressed: {} bytes ({:.1}% reduction)", compressed, ratio);
                         }
                     }
-                    Err(e) => {
-                        error!("Failed to list entries: {}", e);
-                        return Err(anyhow::anyhow!("Failed to list entries: {}", e));
+                } else {
+                    // Group by type
+                    let mut type_counts = std::collections::HashMap::new();
+                    for entry in &entries {
+                        let entry_type = entry.file_type.as_deref().unwrap_or("unknown");
+                        *type_counts.entry(entry_type).or_insert(0) += 1;
+                    }
+                    
+                    println!("\n📊 Asset types:");
+                    for (asset_type, count) in type_counts {
+                        println!("   • {}: {} files", asset_type, count);
                     }
                 }
             }
             Err(e) => {
-                error!("Failed to create handler: {}", e);
-                return Err(anyhow::anyhow!("Failed to create handler: {}", e));
+                error!("Failed to list entries: {}", e);
+                return Err(anyhow::anyhow!("Failed to list entries: {}", e));
             }
         }
     } else {

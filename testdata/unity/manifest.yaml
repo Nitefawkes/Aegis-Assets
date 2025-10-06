@@ -1,0 +1,89 @@
+# Unity Test Corpus Manifest
+# Purpose: Representative samples for extraction pipeline benchmarking and testing
+
+version: "1.0"
+created: "2025-09-24"
+purpose: "Performance benchmarking and golden test validation for Unity extraction pipeline"
+
+# Corpus Requirements: 6 Unity samples covering key scenarios
+samples:
+  - name: "mobile_texture_heavy"
+    description: "Mobile game with many compressed textures (ETC2/ASTC)"
+    target_size: "50-100MB"
+    compression: "LZ4"
+    primary_assets: ["Texture2D", "Sprite", "Material"]
+    file_pattern: "mobile_*.unity3d"
+    status: "needed"
+    
+  - name: "mobile_audio_heavy" 
+    description: "Mobile game with compressed audio (FSB/OGG)"
+    target_size: "30-80MB"
+    compression: "LZMA"
+    primary_assets: ["AudioClip", "Texture2D"]
+    file_pattern: "mobile_audio_*.unity3d"
+    status: "needed"
+    
+  - name: "pc_mesh_heavy"
+    description: "PC game with complex 3D meshes and materials"
+    target_size: "100-200MB"
+    compression: "LZ4"
+    primary_assets: ["Mesh", "Material", "Texture2D"]
+    file_pattern: "pc_meshes_*.unity3d"
+    status: "needed"
+    
+  - name: "pc_mixed_large"
+    description: "Large PC bundle with mixed asset types"
+    target_size: "200-500MB"
+    compression: "LZMA"
+    primary_assets: ["Texture2D", "Mesh", "AudioClip", "Material"]
+    file_pattern: "pc_large_*.unity3d"
+    status: "needed"
+    
+  - name: "streaming_test"
+    description: "Moderate size file for streaming memory tests"
+    target_size: "150-300MB"
+    compression: "LZ4"
+    primary_assets: ["Texture2D", "Mesh"]
+    file_pattern: "streaming_*.unity3d"
+    status: "needed"
+    
+  - name: "small_reference"
+    description: "Small reference file for quick validation"
+    target_size: "5-20MB"
+    compression: "LZ4"
+    primary_assets: ["Texture2D", "AudioClip"]
+    file_pattern: "reference_*.unity3d"
+    status: "needed"
+
+# Performance targets for corpus
+performance_targets:
+  memory_limit_mb: 300        # p95 RSS should not exceed this
+  throughput_min_mbps: 120    # p95 throughput should exceed this
+  processing_time_max_ms: 500 # Average processing time limit
+
+# Extraction validation
+validation:
+  texture_formats: ["PNG", "KTX2"]
+  mesh_formats: ["glTF", "OBJ"] 
+  audio_formats: ["WAV", "OGG"]
+  metadata_required: true
+  golden_checksums: true
+
+# Usage notes
+notes: |
+  This corpus should be sourced from:
+  1. Public domain Unity games (itch.io CC0 releases)
+  2. Unity tutorial/sample projects (with proper attribution)
+  3. Anonymized community contributions (permission granted)
+  
+  Each sample should be documented with:
+  - Source attribution
+  - License information  
+  - Expected asset counts by type
+  - Compression algorithm used
+  
+  Samples will be used for:
+  - Performance regression testing in CI
+  - Memory usage validation
+  - Format conversion accuracy testing
+  - Streaming extraction validation

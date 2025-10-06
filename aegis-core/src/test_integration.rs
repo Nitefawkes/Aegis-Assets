@@ -26,8 +26,8 @@ mod tests {
         assert_eq!(info.compliance_profiles, 0); // No profiles loaded yet
     }
 
-    #[test]
-    fn test_extraction_with_no_plugins() {
+    #[tokio::test]
+    async fn test_extraction_with_no_plugins() {
         let plugin_registry = PluginRegistry::new();
         let compliance_registry = ComplianceRegistry::new();
 
@@ -39,7 +39,7 @@ mod tests {
         std::fs::write(&test_file, b"dummy content").unwrap();
 
         // Should fail because no plugins are registered
-        let result = extractor.extract_from_file(&test_file, temp_dir.path());
+        let result = extractor.extract_from_file(&test_file, temp_dir.path()).await;
 
         match result {
             Err(ExtractionError::NoSuitablePlugin(_)) => {

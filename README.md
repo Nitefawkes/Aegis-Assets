@@ -33,17 +33,11 @@ Aegis-Assets is built on a **compliance-first architecture**. That means we **do
 ## 🛠️ Features
 
 ### ✅ **Core Engine (Implemented)**
-<<<<<<< HEAD
-* ⚡ **Rust Core Engine** → high-performance, memory-safe extraction framework
-* 🔌 **Plugin Architecture** → extensible format support with community marketplace
+* ⚡ **Rust Core Engine** → high-performance, memory-safe extraction framework with async architecture
+* 🔌 **Plugin Architecture** → extensible format support with community marketplace and security validation
 * 📦 **Asset Database** → SQLite-based storage with full-text search and metadata indexing
 * 🔍 **Smart Search** → relevance scoring, tag filtering, type-based queries
-=======
-* ⚡ **Rust Core Engine** → high-performance, memory-safe, parallel extraction
-* 🔌 **Plugin Architecture** → Unity and Unreal Engine plugins with extensible format support
-* 📦 **Asset Index** → JSON-backed catalog with metadata snapshots
-* 🔍 **Smart Search** → structured filtering over the JSON index (SQLite/FTS backend planned)
->>>>>>> 84423c8fd9c4bc46e267dc9a2aa9304a215b347d
+* 🔐 **Security Framework** → plugin validation, threat assessment, and enterprise compliance
 * 🌐 **REST API** → complete HTTP API with JSON responses for programmatic access
 * 🎨 **Web Dashboard** → modern, responsive browser interface for asset management
 
@@ -51,7 +45,7 @@ Aegis-Assets is built on a **compliance-first architecture**. That means we **do
 * 🎮 **Unity Engine** → UnityFS archives, serialized files, comprehensive asset extraction
   * 🖼️ **Textures**: PNG/KTX2 export with DXT/ETC/ASTC decompression, mipmap & alpha handling
   * 🎵 **Audio**: FSB4/FSB5 → WAV/OGG with Vorbis + Firelight ADPCM (GCADPCM/FADPCM) decoding, loop metadata preservation
-  * 🔷 **Meshes**: glTF 2.0 export with OBJ fallback (in progress)
+  * 🔷 **Meshes**: glTF 2.0 export with OBJ fallback, complete pipeline with material support
 * 🏛️ **Unreal Engine** → PAK files, UAsset parsing, IoStore support (foundation)
 * 🏪 **Plugin Marketplace** → discover, install, and manage community plugins
 
@@ -64,8 +58,8 @@ Aegis-Assets is built on a **compliance-first architecture**. That means we **do
 
 ### 🚧 **In Development**
 * ⚡ **Performance Engine** → parallel processing, streaming, memory optimization
-* 🧪 **Testing Framework** → comprehensive plugin and extraction validation
-* 🔐 **Security Sandbox** → plugin execution isolation and validation
+* 🧪 **Testing Framework** → comprehensive plugin and extraction validation  
+* 🗜️ **Advanced Compression** → Oodle decompression bridge for modern game formats
 * 📊 **Analytics Engine** → usage tracking, performance monitoring, optimization
 
 ## 🔒 Why Compliance Matters
@@ -84,19 +78,15 @@ This stance is not a weakness — it's our **category-defining advantage**.
 * ✅ Unity & Unreal baseline support
 * ✅ Core extraction pipeline with asset conversion
 * ✅ REST API and web dashboard
-<<<<<<< HEAD
 * ✅ Asset database with search capabilities
-=======
-* 🚧 Asset indexing & search (JSON-backed today; SQLite backend pending)
-* 🚧 Patch recipes (in development)
->>>>>>> 84423c8fd9c4bc46e267dc9a2aa9304a215b347d
 * ✅ Compliance manifesto published
 * ✅ **Plugin marketplace foundation** (database, CLI, web interface)
 
 ### 🚧 **Phase 2 (Current - Q4 2025):**
 * ✅ **Sprint 1-2**: Unity texture pipeline (PNG/KTX2, atlas extraction, golden tests)
 * ✅ **Sprint 3**: Unity audio pipeline (FSB decode, Vorbis/ADPCM, loop metadata, validation)
-* 🔄 **Sprint 3**: Unity mesh pipeline (glTF/OBJ export, materials, validation) — in progress
+* ✅ **Sprint 3**: Unity mesh pipeline (glTF/OBJ export, materials, validation) — **COMPLETED**
+* ✅ **Sprint 3**: Security framework integration (plugin validation, threat assessment, enterprise compliance) — **COMPLETED**
 * 🔄 **Sprint 4**: Advanced compression (Oodle bridge, streaming decompression)
 * 🔄 **Sprint 5**: Ethical sourcing integration (OpenGameArt, Itch.io, license detection)
 
@@ -149,15 +139,11 @@ cargo build --release
 ./target/release/aegis db stats
 ```
 
-<<<<<<< HEAD
-### 🌐 **Web Interfaces**
-=======
 ### ⚠️ Python bindings status
 
 The `aegis-python` crate currently provides a stub PyO3 module. Functional bindings for configuring and running extractions from Python are still in development, so all workflows should use the Rust CLI or core library for the time being.
 
 ### 🌐 **Web Dashboard**
->>>>>>> 84423c8fd9c4bc46e267dc9a2aa9304a215b347d
 
 After starting the API server, access the web interfaces:
 

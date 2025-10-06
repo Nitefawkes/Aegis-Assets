@@ -37,6 +37,9 @@ walkdir = "2.4"
 once_cell = "1.19"
 dashmap = "5.5"
 
+# Security framework integration
+# aegis-security = { path = "../aegis-security", optional = true }
+
 # Plugin registry dependencies
 rusqlite = { version = "0.30", features = ["bundled", "uuid", "chrono", "serde_json"] }
 rusqlite_migration = "1.1"
@@ -75,9 +78,11 @@ ai-tagging = []
 ai-upscaling = []
 
 # Enterprise features
-enterprise = ["audit-trails", "compliance-verification"]
+enterprise = ["audit-trails", "compliance-verification", "security-framework"]
 audit-trails = []
 compliance-verification = []
+# security-framework = ["aegis-security"]
+security-framework = []
 
 # API features
 api = ["axum", "tower", "tower-http", "hyper"]
@@ -86,3 +91,4 @@ api = ["axum", "tower", "tower-http", "hyper"]
 tempfile = "3.8"
 criterion = "0.5"
 proptest = "1.4"
+tokio-test = "0.4"

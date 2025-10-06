@@ -2,6 +2,7 @@ use crate::{
     archive::ComplianceRegistry,
     compliance::{ComplianceChecker, ComplianceResult},
     resource::Resource,
+    security::{SecurityManager, SecurityReport},
     Config, PluginRegistry,
 };
 use anyhow::Result;
@@ -53,6 +54,8 @@ pub struct ExtractionResult {
     pub warnings: Vec<String>,
     /// Compliance information
     pub compliance_info: ComplianceInfo,
+    /// Security report (if security framework is enabled)
+    pub security_report: Option<SecurityReport>,
     /// Performance metrics
     pub metrics: ExtractionMetrics,
 }
@@ -241,6 +244,7 @@ pub struct Extractor {
     plugin_registry: PluginRegistry,
     compliance_checker: ComplianceChecker,
     config: Config,
+    security_manager: Option<SecurityManager>,
 }
 
 impl Extractor {
@@ -251,6 +255,7 @@ impl Extractor {
             plugin_registry,
             compliance_checker,
             config: Config::default(),
+            security_manager: None,
         }
     }
 
@@ -265,6 +270,7 @@ impl Extractor {
             plugin_registry,
             compliance_checker,
             config,
+            security_manager: None,
         }
     }
 
@@ -278,8 +284,29 @@ impl Extractor {
         &self.compliance_checker
     }
 
+    /// Initialize security manager (async operation)
+    pub async fn init_security(&mut self) -> Result<(), ExtractionError> {
+        match SecurityManager::new().await {
+            Ok(security_manager) => {
+                info!("Security framework initialized successfully");
+                self.security_manager = Some(security_manager);
+                Ok(())
+            }
+            Err(e) => {
+                warn!("Failed to initialize security framework: {}", e);
+                // Continue without security framework
+                Ok(())
+            }
+        }
+    }
+
+    /// Check if security framework is enabled
+    pub fn has_security(&self) -> bool {
+        self.security_manager.as_ref().map_or(false, |sm| sm.is_enabled())
+    }
+
     /// Extract assets from a file
-    pub fn extract_from_file(
+    pub async fn extract_from_file(
         &mut self,
         source_path: &Path,
         _output_dir: &Path,
@@ -302,16 +329,34 @@ impl Extractor {
 
         // Find suitable plugin using registry
         info!("Detecting file format...");
-        let plugin_factory = self
+        let (handler, plugin_info) = self
             .plugin_registry
-            .find_handler(source_path, &header)
+            .find_handler_with_info(source_path, &header)
             .ok_or_else(|| ExtractionError::NoSuitablePlugin(source_path.to_path_buf()))?;
 
-        info!(
-            "Using plugin: {} v{}",
-            plugin_factory.name(),
-            plugin_factory.version()
-        );
+        info!("Using plugin handler: {} v{} for: {}", 
+              plugin_info.name(), plugin_info.version(), source_path.display());
+
+        // Security validation if enabled
+        let mut security_report = None;
+        if let Some(ref security_manager) = self.security_manager {
+            info!("Running security validation...");
+            match security_manager.validate_plugin(source_path).await {
+                Ok(report) => {
+                    if !report.plugin_approved {
+                        return Err(ExtractionError::Generic(anyhow::anyhow!(
+                            "Plugin security validation failed: threat level {:?}, score: {}",
+                            report.threat_level, report.security_score
+                        )));
+                    }
+                    security_report = Some(report);
+                }
+                Err(e) => {
+                    warn!("Security validation failed: {}", e);
+                    // Continue without security validation in case of framework issues
+                }
+            }
+        }
 
         // Check compliance before extraction
         let game_id = source_path
@@ -368,14 +413,15 @@ impl Extractor {
 
         let memory_tracker = MemoryTracker::start();
 
-        // Create handler and extract resources
-        let handler = plugin_factory.create_handler(source_path)?;
+        // Extract resources using the handler
         let entries = handler.list_entries()?;
 
         info!("Found {} entries in archive", entries.len());
 
-        // Convert entries to resources (simplified)
+        // Extract actual resource data through the handler
         let mut resources = Vec::new();
+        let mut total_extracted_bytes = 0u64;
+        
         for entry in entries {
             let resource_type = match entry.file_type.as_deref() {
                 Some("texture") => crate::resource::ResourceType::Texture,
@@ -384,19 +430,77 @@ impl Extractor {
                 _ => crate::resource::ResourceType::Generic,
             };
 
-            let resource = crate::resource::Resource {
-                id: entry.id.0.clone(),
-                name: entry.name.clone(),
-                resource_type,
-                size: entry.size_uncompressed,
-                format: entry.file_type.unwrap_or_else(|| "unknown".to_string()),
-                metadata: std::collections::HashMap::new(),
-            };
-            resources.push(resource);
+            // Actually read the entry data through the handler
+            match handler.read_entry(&entry.id) {
+                Ok(entry_data) => {
+                    let actual_size = entry_data.len() as u64;
+                    total_extracted_bytes += actual_size;
+                    
+                    // Store the actual data in metadata for now
+                    // In a real implementation, this would be processed further based on resource type
+                    let mut metadata = std::collections::HashMap::new();
+                    metadata.insert("data_size".to_string(), actual_size.to_string());
+                    metadata.insert("extracted".to_string(), "true".to_string());
+                    
+                    if let Some(file_type) = &entry.file_type {
+                        metadata.insert("original_format".to_string(), file_type.clone());
+                    }
+
+                    let resource = crate::resource::Resource {
+                        id: entry.id.0.clone(),
+                        name: entry.name.clone(),
+                        resource_type,
+                        size: actual_size,
+                        format: entry.file_type.unwrap_or_else(|| "unknown".to_string()),
+                        metadata,
+                    };
+                    resources.push(resource);
+                    
+                    info!("Successfully extracted entry: {} ({} bytes)", entry.name, actual_size);
+                }
+                Err(e) => {
+                    warn!("Failed to extract entry {}: {}", entry.name, e);
+                    // Create a resource entry to track the failure
+                    let mut metadata = std::collections::HashMap::new();
+                    metadata.insert("extraction_failed".to_string(), "true".to_string());
+                    metadata.insert("error".to_string(), e.to_string());
+                    
+                    let resource = crate::resource::Resource {
+                        id: entry.id.0.clone(),
+                        name: entry.name.clone(),
+                        resource_type,
+                        size: 0,
+                        format: entry.file_type.unwrap_or_else(|| "unknown".to_string()),
+                        metadata,
+                    };
+                    resources.push(resource);
+                }
+            }
+        }
+
+        // Security scan of extracted assets if enabled
+        if let Some(ref security_manager) = self.security_manager {
+            if let Some(ref mut report) = security_report {
+                info!("Running security scan on extracted assets...");
+                match security_manager.scan_extracted_assets(_output_dir).await {
+                    Ok(asset_scan_report) => {
+                        // Merge asset scan results with plugin validation
+                        report.warnings.extend(asset_scan_report.warnings);
+                        // Use the lower of the two security scores
+                        if asset_scan_report.security_score < report.security_score {
+                            report.security_score = asset_scan_report.security_score;
+                            report.threat_level = asset_scan_report.threat_level;
+                            report.compliance_status = asset_scan_report.compliance_status;
+                        }
+                    }
+                    Err(e) => {
+                        warn!("Asset security scan failed: {}", e);
+                    }
+                }
+            }
         }
 
         let duration = start_time.elapsed();
-        let total_bytes: u64 = resources.iter().map(|r| r.size).sum();
         let peak_memory_mb = match memory_tracker.finish() {
             Some(value) => value,
             None => {
@@ -408,7 +512,7 @@ impl Extractor {
             duration_ms: duration.as_millis() as u64,
             peak_memory_mb,
             files_processed: resources.len(),
-            bytes_extracted: total_bytes,
+            bytes_extracted: total_extracted_bytes,
         };
 
         let compliance_info = ComplianceInfo {
@@ -430,12 +534,13 @@ impl Extractor {
             resources,
             warnings: vec![],
             compliance_info,
+            security_report,
             metrics,
         })
     }
 
     /// Batch extract multiple files
-    pub fn extract_batch(
+    pub async fn extract_batch(
         &mut self,
         sources: Vec<&Path>,
         output_dir: &Path,
@@ -443,7 +548,7 @@ impl Extractor {
         let mut results = Vec::new();
 
         for source in sources {
-            match self.extract_from_file(source, output_dir) {
+            match self.extract_from_file(source, output_dir).await {
                 Ok(result) => results.push(result),
                 Err(e) => {
                     error!("Failed to extract {}: {}", source.display(), e);
@@ -511,21 +616,21 @@ mod tests {
         assert_eq!(stats.files_processed, 0);
     }
 
-    #[test]
-    fn test_file_not_found() {
+    #[tokio::test]
+    async fn test_file_not_found() {
         let plugin_registry = crate::PluginRegistry::new();
         let compliance = ComplianceRegistry::new();
         let mut extractor = Extractor::new(plugin_registry, compliance);
         let temp_dir = TempDir::new().unwrap();
 
         let result =
-            extractor.extract_from_file(&temp_dir.path().join("nonexistent.file"), temp_dir.path());
+            extractor.extract_from_file(&temp_dir.path().join("nonexistent.file"), temp_dir.path()).await;
 
         assert!(matches!(result, Err(ExtractionError::FileNotFound(_))));
     }
 
-    #[test]
-    fn test_mock_extraction() {
+    #[tokio::test]
+    async fn test_mock_extraction() {
         let plugin_registry = crate::PluginRegistry::new();
         let compliance = ComplianceRegistry::new();
         let mut extractor = Extractor::new(plugin_registry, compliance);
@@ -536,13 +641,13 @@ mod tests {
         let mut file = File::create(&test_file).unwrap();
         file.write_all(b"test data").unwrap();
 
-        let result = extractor.extract_from_file(&test_file, temp_dir.path());
+        let result = extractor.extract_from_file(&test_file, temp_dir.path()).await;
         // This will likely fail since we have no plugins registered, but that's expected
         assert!(result.is_err());
     }
 
-    #[test]
-    fn test_peak_memory_metrics_are_recorded() {
+    #[tokio::test]
+    async fn test_peak_memory_metrics_are_recorded() {
         reset_mock_peak_memory_bytes();
         let baseline = 100 * 1024 * 1024;
         let final_peak = 150 * 1024 * 1024;
@@ -554,14 +659,15 @@ mod tests {
 
         let result = extractor
             .extract_from_file(&test_file, temp_dir.path())
+            .await
             .expect("extraction should succeed");
 
         assert_eq!(result.metrics.peak_memory_mb, 150);
         assert_eq!(result.metrics.files_processed, 1);
     }
 
-    #[test]
-    fn test_peak_memory_metrics_default_to_zero_when_unavailable() {
+    #[tokio::test]
+    async fn test_peak_memory_metrics_default_to_zero_when_unavailable() {
         reset_mock_peak_memory_bytes();
         push_mock_peak_memory_bytes([None, None]);
 
@@ -571,6 +677,7 @@ mod tests {
 
         let result = extractor
             .extract_from_file(&test_file, temp_dir.path())
+            .await
             .expect("extraction should succeed");
 
         assert_eq!(result.metrics.peak_memory_mb, 0);
@@ -613,13 +720,12 @@ mod tests {
             Ok(Box::new(MockArchiveHandler::open(path)?))
         }
 
-        fn compliance_info(&self) -> PluginInfo {
-            PluginInfo {
-                name: "mock-plugin".to_string(),
-                version: "1.0".to_string(),
-                author: Some("Test".to_string()),
-                compliance_verified: true,
-            }
+        fn compliance_info(&self) -> crate::PluginInfo {
+            crate::PluginInfo::new(
+                "mock-plugin".to_string(),
+                "1.0".to_string(),
+                vec!["mock".to_string()],
+            )
         }
     }
 

@@ -23,7 +23,7 @@ mod firelight_adpcm;
 mod integration_test;
 
 use compression::decompress_unity_data;
-use audio_pipeline::{convert_unity_audio_clip, AudioPipelineOptions};
+use audio_pipeline::{convert_unity_audio_clip, AudioPipelineOptions, AudioConversionResult};
 use converters::{convert_unity_asset, UnityAudioClip, UnityMesh};
 use formats::{AssetBundle, SerializedFile};
 use mesh_pipeline::{convert_unity_mesh, MeshPipelineOptions};
@@ -62,13 +62,12 @@ impl PluginFactory for UnityPluginFactory {
         Ok(Box::new(handler))
     }
 
-    fn compliance_info(&self) -> PluginInfo {
-        PluginInfo {
-            name: "Unity".to_string(),
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            author: Some("Aegis-Assets Team".to_string()),
-            compliance_verified: true,
-        }
+    fn compliance_info(&self) -> aegis_core::PluginInfo {
+        aegis_core::PluginInfo::new(
+            "Unity".to_string(),
+            env!("CARGO_PKG_VERSION").to_string(),
+            vec!["unity3d".to_string(), "assets".to_string()]
+        )
     }
 }
 
@@ -146,11 +145,12 @@ impl UnityArchive {
             bail!("File does not exist: {}", path.display());
         }
         
-        let file_data = std::fs::read(path)
-            .context("Failed to read Unity archive file")?;
+        // Create memory map for efficient access
+        let file = std::fs::File::open(path)?;
+        let data = unsafe { Mmap::map(&file)? };
         
         // Determine file type and parse
-        let (bundle, serialized_file) = Self::parse_unity_file(&file_data)?;
+        let (bundle, serialized_file) = Self::parse_unity_file(&data)?;
         
         // Generate provenance
         let provenance = Self::create_provenance(path, &compliance_profile)?;
@@ -669,6 +669,12 @@ impl UnityArchive {
                                         for warning in &result.warnings {
                                             warn!("Audio conversion warning: {}", warning);
                                         }
+                                        
+                                        // Create AudioResource for core system integration
+                                        let audio_resource = Self::create_audio_resource_from_result(&result, &clip);
+                                        
+                                        // Store the AudioResource for potential re-export with different codecs
+                                        // For now, return the primary artifact as before
                                         return Ok((result.primary.filename, result.primary.bytes));
                                     }
                                     Err(e) => {
@@ -679,6 +685,39 @@ impl UnityArchive {
                             }
                             Err(e) => {
                                 warn!("Failed to parse AudioClip {}: {}. Falling back to generic converter.", id.0, e);
+                            }
+                        }
+                    }
+                    
+                    // Special handling for Mesh to use enhanced mesh pipeline
+                    if object.class_id == 43 { // Mesh
+                        match UnityMesh::parse(&raw_data) {
+                            Ok(mesh) => {
+                                match convert_unity_mesh(&mesh, &self.mesh_options) {
+                                    Ok(result) => {
+                                        info!(
+                                            "Mesh pipeline produced {} ({})",
+                                            result.primary.filename,
+                                            result.stats
+                                        );
+                                        if let Some(ref fallback) = result.fallback {
+                                            info!(
+                                                "Mesh fallback artifact available: {} ({} bytes)",
+                                                fallback.filename,
+                                                fallback.bytes.len()
+                                            );
+                                        }
+                                        info!("Mesh validation: {:?}", result.validation);
+                                        
+                                        return Ok((result.primary.filename, result.primary.bytes));
+                                    }
+                                    Err(e) => {
+                                        warn!("Mesh pipeline failed for {}: {}. Falling back to generic converter.", id.0, e);
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                warn!("Failed to parse Mesh {}: {}. Falling back to generic converter.", id.0, e);
                             }
                         }
                     }
@@ -702,6 +741,43 @@ impl UnityArchive {
         // For bundle blocks or unsupported types, return raw data
         Ok((format!("{}.bin", id.0), raw_data))
     }
+    
+    /// Create an AudioResource from Unity audio pipeline results for core system integration
+    fn create_audio_resource_from_result(
+        result: &AudioConversionResult,
+        clip: &UnityAudioClip,
+    ) -> aegis_core::resource::AudioResource {
+        use aegis_core::resource::AudioFormat;
+        
+        // Determine the audio format based on the primary artifact
+        let format = if result.primary.filename.ends_with(".wav") {
+            AudioFormat::WAV
+        } else if result.primary.filename.ends_with(".ogg") {
+            if result.primary.media_type.contains("vorbis") {
+                AudioFormat::Vorbis
+            } else {
+                AudioFormat::OGG
+            }
+        } else if result.primary.filename.ends_with(".mp3") {
+            AudioFormat::MP3
+        } else if result.primary.filename.ends_with(".flac") {
+            AudioFormat::FLAC
+        } else if result.primary.filename.ends_with(".opus") {
+            AudioFormat::Opus
+        } else {
+            // Default to PCM if we can't determine format
+            AudioFormat::PCM
+        };
+        
+        aegis_core::resource::AudioResource {
+            name: clip.name.clone(),
+            format,
+            data: result.primary.bytes.clone(),
+            sample_rate: result.stats.sample_rate,
+            channels: result.stats.channels as u8,
+            duration_seconds: result.stats.duration_seconds as f32,
+        }
+    }
 }
 
 impl Drop for UnityArchive {
@@ -717,7 +793,6 @@ mod tests {
     #[test]
     fn test_unity_detection() {
         // Test UnityFS detection
-codex/handle-unknown-compression-type-error
         let unityfs_header = [
             b'U', b'n', b'i', b't', b'y', b'F', b'S', 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ];
@@ -750,7 +825,8 @@ codex/handle-unknown-compression-type-error
         assert!(factory.supported_extensions().contains(&"assets"));
 
         let info = factory.compliance_info();
-        assert_eq!(info.name, "Unity");
-        assert!(info.compliance_verified);
+        assert_eq!(info.name(), "Unity");
+        // PluginInfo doesn't have compliance_verified field anymore
+        // assert!(info.compliance_verified);
     }
 }

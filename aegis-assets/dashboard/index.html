@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Aegis Assets Control Plane</title>
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand__name">Aegis Assets</span>
+          <span class="brand__sub">Control Plane</span>
+        </div>
+        <nav class="nav" aria-label="Primary">
+          <a class="nav__link" href="#risk">Risk heatmap</a>
+          <a class="nav__link" href="#jobs">Live job monitor</a>
+          <a class="nav__link" href="#policy">Policy studio</a>
+          <a class="nav__link" href="#gallery">Asset gallery</a>
+          <a class="nav__link" href="#audit">Audit timeline</a>
+        </nav>
+        <div class="sidebar__footer">
+          <p>Control-plane API: <span id="api-base">/control-plane</span></p>
+        </div>
+      </aside>
+      <main class="main" id="main" aria-live="polite"></main>
+    </div>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

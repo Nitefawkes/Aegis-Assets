@@ -40,6 +40,8 @@ Aegis-Assets is built on a **compliance-first architecture**. That means we **do
 * 🤖 **AI-Powered Tools (Pro)** → auto-tagging, PBR derivation, semantic search.
 * 🖼️ **GUI & Web Preview** → glTF2 + KTX2 + OGG viewing without engines installed.
 
+> ℹ️ **Current implementation snapshot:** Several of the above achievements are still prototypes or placeholders in the codebase. See [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md) for a detailed review of what is implemented today and the immediate tasks required to reach these goals.
+
 ## 🔒 Why Compliance Matters
 
 Every other tool competes on format breadth. Aegis competes on **trust**:

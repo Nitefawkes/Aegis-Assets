@@ -1,7 +1,17 @@
-use crate::{archive::ComplianceRegistry, resource::Resource, Config, PluginRegistry};
+use crate::{
+    archive::ComplianceRegistry,
+    events::{
+        ExtractionEvent, ExtractionEventEmitter, ExtractionEventKind, JobState, NoopEventEmitter,
+    },
+    resource::Resource,
+    Config, PluginRegistry,
+};
+use chrono::Utc;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use thiserror::Error;
 use tracing::{error, info};
+use uuid::Uuid;
 
 /// Errors that can occur during extraction
 #[derive(Debug, Error)]
@@ -74,6 +84,7 @@ pub struct Extractor {
     plugin_registry: Option<*const PluginRegistry>,
     compliance_registry: Option<*const ComplianceRegistry>,
     config: Config,
+    event_emitter: Arc<dyn ExtractionEventEmitter>,
 }
 
 impl Extractor {
@@ -83,6 +94,7 @@ impl Extractor {
             plugin_registry: None,
             compliance_registry: None, // Will be properly initialized
             config: Config::default(),
+            event_emitter: Arc::new(NoopEventEmitter),
         }
     }
 
@@ -96,6 +108,7 @@ impl Extractor {
             plugin_registry: Some(plugin_registry as *const _),
             compliance_registry: Some(compliance_registry as *const _),
             config,
+            event_emitter: Arc::new(NoopEventEmitter),
         }
     }
 
@@ -105,14 +118,51 @@ impl Extractor {
         source_path: &Path,
         _output_dir: &Path,
     ) -> Result<ExtractionResult, ExtractionError> {
+        let job_id = Uuid::new_v4();
+        self.extract_from_file_with_job_id(source_path, _output_dir, job_id)
+    }
+
+    /// Extract assets from a file using a known job ID
+    pub fn extract_from_file_with_job_id(
+        &mut self,
+        source_path: &Path,
+        _output_dir: &Path,
+        job_id: Uuid,
+    ) -> Result<ExtractionResult, ExtractionError> {
         let start_time = std::time::Instant::now();
+
+        self.emit_event(ExtractionEvent {
+            job_id,
+            occurred_at: Utc::now(),
+            kind: ExtractionEventKind::JobStateChange {
+                state: JobState::Queued,
+                message: Some("Extraction requested.".to_string()),
+            },
+        });
 
         info!("Starting extraction from: {}", source_path.display());
 
         // Check if file exists
         if !source_path.exists() {
+            self.emit_event(ExtractionEvent {
+                job_id,
+                occurred_at: Utc::now(),
+                kind: ExtractionEventKind::JobStateChange {
+                    state: JobState::Failed,
+                    message: Some("Source file not found.".to_string()),
+                },
+            });
             return Err(ExtractionError::FileNotFound(source_path.to_path_buf()));
         }
+
+        self.emit_event(ExtractionEvent {
+            job_id,
+            occurred_at: Utc::now(),
+            kind: ExtractionEventKind::JobStateChange {
+                state: JobState::Running,
+                message: Some("Detecting file format.".to_string()),
+            },
+        });
 
         // Read file header for plugin detection
         let mut file = std::fs::File::open(source_path)?;
@@ -126,6 +176,17 @@ impl Extractor {
 
         // For now, create a mock result
         let resources = self.mock_extract_resources(source_path)?;
+        let total_resources = resources.len();
+        for (index, _resource) in resources.iter().enumerate() {
+            self.emit_event(ExtractionEvent {
+                job_id,
+                occurred_at: Utc::now(),
+                kind: ExtractionEventKind::AssetIndexingProgress {
+                    indexed: index + 1,
+                    total: total_resources,
+                },
+            });
+        }
 
         let duration = start_time.elapsed();
         let metrics = ExtractionMetrics {
@@ -142,11 +203,31 @@ impl Extractor {
             recommendations: vec!["Ensure you own the source files".to_string()],
         };
 
+        self.emit_event(ExtractionEvent {
+            job_id,
+            occurred_at: Utc::now(),
+            kind: ExtractionEventKind::ComplianceDecision {
+                is_compliant: compliance_info.is_compliant,
+                risk_level: compliance_info.risk_level,
+                warnings: compliance_info.warnings.clone(),
+                recommendations: compliance_info.recommendations.clone(),
+            },
+        });
+
         info!(
             "Extraction completed in {}ms, {} resources extracted",
             metrics.duration_ms,
             resources.len()
         );
+
+        self.emit_event(ExtractionEvent {
+            job_id,
+            occurred_at: Utc::now(),
+            kind: ExtractionEventKind::JobStateChange {
+                state: JobState::Completed,
+                message: Some("Extraction completed.".to_string()),
+            },
+        });
 
         Ok(ExtractionResult {
             source_path: source_path.to_path_buf(),
@@ -155,6 +236,14 @@ impl Extractor {
             compliance_info,
             metrics,
         })
+    }
+
+    pub fn set_event_emitter(&mut self, event_emitter: Arc<dyn ExtractionEventEmitter>) {
+        self.event_emitter = event_emitter;
+    }
+
+    fn emit_event(&self, event: ExtractionEvent) {
+        self.event_emitter.emit(event);
     }
 
     /// Mock resource extraction for initial implementation

@@ -47,6 +47,7 @@
 
 pub mod archive;
 pub mod compliance;
+pub mod events;
 pub mod export;
 pub mod extract;
 pub mod patch;
@@ -56,6 +57,9 @@ pub mod resource;
 pub use archive::{
     ArchiveHandler, ComplianceLevel, ComplianceProfile, ComplianceRegistry, EntryId, EntryMetadata,
     FormatSupport, PluginInfo, Provenance,
+};
+pub use events::{
+    ExtractionEvent, ExtractionEventEmitter, ExtractionEventKind, JobState, NoopEventEmitter,
 };
 pub use export::{ExportFormat, ExportOptions, Exporter};
 pub use extract::{ExtractionError, ExtractionResult, Extractor};

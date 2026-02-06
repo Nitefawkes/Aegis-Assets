@@ -130,6 +130,7 @@ impl Extractor {
         job_id: Uuid,
     ) -> Result<ExtractionResult, ExtractionError> {
         let start_time = std::time::Instant::now();
+        let job_id = uuid::Uuid::new_v4();
 
         self.emit_event(ExtractionEvent {
             job_id,
@@ -171,8 +172,16 @@ impl Extractor {
         let bytes_read = file.read(&mut header)?;
         header.truncate(bytes_read);
 
-        // Find suitable plugin (placeholder - would use actual registry)
-        info!("Detecting file format...");
+        // Find suitable plugin via registry
+        info!(
+            event = "plugin_detection_started",
+            job_id = %job_id,
+            source_path = %source_path.display()
+        );
+
+        let registry = self.plugin_registry.map(|registry| unsafe { &*registry });
+        let registry =
+            registry.ok_or_else(|| ExtractionError::NoSuitablePlugin(source_path.to_path_buf()))?;
 
         // For now, create a mock result
         let resources = self.mock_extract_resources(source_path)?;
@@ -191,16 +200,9 @@ impl Extractor {
         let duration = start_time.elapsed();
         let metrics = ExtractionMetrics {
             duration_ms: duration.as_millis() as u64,
-            peak_memory_mb: 64, // Mock value
-            files_processed: 1,
-            bytes_extracted: 1024 * 1024, // Mock value
-        };
-
-        let compliance_info = ComplianceInfo {
-            is_compliant: true,
-            risk_level: crate::archive::ComplianceLevel::Neutral,
-            warnings: vec!["This is a placeholder implementation".to_string()],
-            recommendations: vec!["Ensure you own the source files".to_string()],
+            peak_memory_mb: (bytes_extracted / (1024 * 1024)) as usize,
+            files_processed: entries.len(),
+            bytes_extracted,
         };
 
         self.emit_event(ExtractionEvent {
@@ -215,9 +217,12 @@ impl Extractor {
         });
 
         info!(
-            "Extraction completed in {}ms, {} resources extracted",
-            metrics.duration_ms,
-            resources.len()
+            event = "extraction_job_status",
+            status = "completed",
+            job_id = %job_id,
+            duration_ms = metrics.duration_ms,
+            resources_extracted = resources.len(),
+            bytes_extracted = metrics.bytes_extracted
         );
 
         self.emit_event(ExtractionEvent {
@@ -313,9 +318,128 @@ unsafe impl Sync for Extractor {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::archive::{ArchiveHandler, EntryId, EntryMetadata, PluginInfo, Provenance};
+    use crate::PluginFactory;
+    use anyhow::Result;
     use std::fs::File;
     use std::io::Write;
+    use std::path::PathBuf;
     use tempfile::TempDir;
+
+    struct TestPluginFactory;
+
+    struct TestArchive {
+        data: Vec<u8>,
+        entries: Vec<EntryMetadata>,
+        compliance_profile: crate::archive::ComplianceProfile,
+        provenance: Provenance,
+    }
+
+    impl PluginFactory for TestPluginFactory {
+        fn name(&self) -> &str {
+            "TestPlugin"
+        }
+
+        fn version(&self) -> &str {
+            "0.1.0"
+        }
+
+        fn supported_extensions(&self) -> Vec<&str> {
+            vec!["dat"]
+        }
+
+        fn can_handle(&self, _bytes: &[u8]) -> bool {
+            true
+        }
+
+        fn create_handler(&self, path: &std::path::Path) -> Result<Box<dyn ArchiveHandler>> {
+            Ok(Box::new(TestArchive::open(path)?))
+        }
+
+        fn compliance_info(&self) -> PluginInfo {
+            PluginInfo {
+                name: "TestPlugin".to_string(),
+                version: "0.1.0".to_string(),
+                author: Some("Test".to_string()),
+                compliance_verified: true,
+            }
+        }
+    }
+
+    impl ArchiveHandler for TestArchive {
+        fn detect(_bytes: &[u8]) -> bool
+        where
+            Self: Sized,
+        {
+            true
+        }
+
+        fn open(path: &std::path::Path) -> Result<Self>
+        where
+            Self: Sized,
+        {
+            let data = std::fs::read(path)?;
+            let file_name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("test.dat")
+                .to_string();
+
+            let entry = EntryMetadata {
+                id: EntryId::new("entry_0"),
+                name: file_name.clone(),
+                path: PathBuf::from(path),
+                size_compressed: None,
+                size_uncompressed: data.len() as u64,
+                file_type: path
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .map(|s| s.to_string()),
+                last_modified: None,
+                checksum: None,
+            };
+
+            let compliance_profile = ComplianceRegistry::default_profile();
+            let provenance = Provenance {
+                session_id: uuid::Uuid::new_v4(),
+                game_id: Some("test_game".to_string()),
+                source_hash: blake3::hash(&data).to_hex().to_string(),
+                source_path: path.to_path_buf(),
+                compliance_profile: compliance_profile.clone(),
+                extraction_time: chrono::Utc::now(),
+                aegis_version: crate::VERSION.to_string(),
+                plugin_info: PluginInfo {
+                    name: "TestPlugin".to_string(),
+                    version: "0.1.0".to_string(),
+                    author: Some("Test".to_string()),
+                    compliance_verified: true,
+                },
+            };
+
+            Ok(Self {
+                data,
+                entries: vec![entry],
+                compliance_profile,
+                provenance,
+            })
+        }
+
+        fn compliance_profile(&self) -> &crate::archive::ComplianceProfile {
+            &self.compliance_profile
+        }
+
+        fn list_entries(&self) -> Result<Vec<EntryMetadata>> {
+            Ok(self.entries.clone())
+        }
+
+        fn read_entry(&self, _id: &EntryId) -> Result<Vec<u8>> {
+            Ok(self.data.clone())
+        }
+
+        fn provenance(&self) -> &Provenance {
+            &self.provenance
+        }
+    }
 
     #[test]
     fn test_extractor_creation() {
@@ -341,7 +465,9 @@ mod tests {
     #[test]
     fn test_mock_extraction() {
         let compliance = ComplianceRegistry::new();
-        let mut extractor = Extractor::new(compliance);
+        let mut registry = PluginRegistry::new();
+        registry.register_plugin(Box::new(TestPluginFactory));
+        let mut extractor = Extractor::with_registries(&registry, &compliance, Config::default());
         let temp_dir = TempDir::new().unwrap();
 
         // Create a dummy file

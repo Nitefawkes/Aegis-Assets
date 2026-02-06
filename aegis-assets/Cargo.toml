@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "aegis-core",
+    "aegis-control-plane",
     "aegis-python",
     "aegis-plugins/unity",
 ]

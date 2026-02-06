@@ -1,0 +1,25 @@
+[package]
+name = "aegis-control-plane"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Control plane service for Aegis-Assets"
+
+[dependencies]
+axum = { version = "0.7", features = ["macros"] }
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+anyhow.workspace = true
+chrono.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
+sqlx = { version = "0.7", features = ["runtime-tokio", "sqlite", "postgres", "chrono", "uuid", "macros", "any"] }
+aegis-core = { path = "../aegis-core" }
+
+[dev-dependencies]
+tower = "0.4"

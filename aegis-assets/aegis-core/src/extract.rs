@@ -1,4 +1,9 @@
-use crate::{archive::ComplianceRegistry, resource::Resource, Config, PluginRegistry};
+use crate::{
+    archive::ComplianceRegistry,
+    compliance::{ComplianceChecker, ComplianceResult},
+    resource::{BinaryResource, Resource, TextContentType, TextResource},
+    Config, PluginRegistry,
+};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 use tracing::{error, info};
@@ -106,8 +111,14 @@ impl Extractor {
         _output_dir: &Path,
     ) -> Result<ExtractionResult, ExtractionError> {
         let start_time = std::time::Instant::now();
+        let job_id = uuid::Uuid::new_v4();
 
-        info!("Starting extraction from: {}", source_path.display());
+        info!(
+            event = "extraction_job_status",
+            status = "started",
+            job_id = %job_id,
+            source_path = %source_path.display()
+        );
 
         // Check if file exists
         if !source_path.exists() {
@@ -121,31 +132,123 @@ impl Extractor {
         let bytes_read = file.read(&mut header)?;
         header.truncate(bytes_read);
 
-        // Find suitable plugin (placeholder - would use actual registry)
-        info!("Detecting file format...");
+        // Find suitable plugin via registry
+        info!(
+            event = "plugin_detection_started",
+            job_id = %job_id,
+            source_path = %source_path.display()
+        );
 
-        // For now, create a mock result
-        let resources = self.mock_extract_resources(source_path)?;
+        let registry = self.plugin_registry.map(|registry| unsafe { &*registry });
+        let registry =
+            registry.ok_or_else(|| ExtractionError::NoSuitablePlugin(source_path.to_path_buf()))?;
+
+        let plugin_factory = registry
+            .find_handler(source_path, &header)
+            .ok_or_else(|| ExtractionError::NoSuitablePlugin(source_path.to_path_buf()))?;
+
+        info!(
+            event = "plugin_detected",
+            job_id = %job_id,
+            plugin = plugin_factory.name(),
+            plugin_version = plugin_factory.version()
+        );
+
+        let handler = plugin_factory.create_handler(source_path).map_err(|err| {
+            ExtractionError::PluginError {
+                plugin: plugin_factory.name().to_string(),
+                error: err.to_string(),
+            }
+        })?;
+
+        let game_id = handler
+            .provenance()
+            .game_id
+            .clone()
+            .or_else(|| {
+                source_path
+                    .file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .map(|stem| stem.to_string())
+            })
+            .unwrap_or_else(|| "unknown".to_string());
+
+        let format = source_path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or(plugin_factory.name());
+
+        if let Some(compliance_registry) = self
+            .compliance_registry
+            .map(|registry| unsafe { &*registry })
+        {
+            if let Some(profile) = compliance_registry.get_profile(&game_id) {
+                info!(
+                    event = "compliance_profile_detected",
+                    job_id = %job_id,
+                    game_id,
+                    publisher = profile.publisher.as_str(),
+                    enforcement_level = ?profile.enforcement_level
+                );
+            }
+        }
+
+        let mut compliance_checker = ComplianceChecker::new();
+        if let Some(enterprise) = &self.config.enterprise_config {
+            if enterprise.require_compliance_verification {
+                compliance_checker = compliance_checker.with_strict_mode();
+            }
+        }
+
+        let compliance_result = compliance_checker.check_extraction_allowed(&game_id, format);
+        let compliance_info = Self::map_compliance_result(&compliance_result);
+
+        Self::emit_compliance_event(&job_id, &game_id, format, &compliance_result);
+
+        if matches!(compliance_result, ComplianceResult::Blocked { .. }) {
+            if let ComplianceResult::Blocked { reason, .. } = compliance_result {
+                return Err(ExtractionError::ComplianceViolation(reason));
+            }
+        }
+
+        let entries = handler
+            .list_entries()
+            .map_err(|err| ExtractionError::PluginError {
+                plugin: plugin_factory.name().to_string(),
+                error: err.to_string(),
+            })?;
+
+        let mut resources = Vec::new();
+        let mut bytes_extracted = 0u64;
+
+        for entry in entries.iter() {
+            let data =
+                handler
+                    .read_entry(&entry.id)
+                    .map_err(|err| ExtractionError::PluginError {
+                        plugin: plugin_factory.name().to_string(),
+                        error: err.to_string(),
+                    })?;
+
+            bytes_extracted += data.len() as u64;
+            resources.push(Self::resource_from_entry(entry, data));
+        }
 
         let duration = start_time.elapsed();
         let metrics = ExtractionMetrics {
             duration_ms: duration.as_millis() as u64,
-            peak_memory_mb: 64, // Mock value
-            files_processed: 1,
-            bytes_extracted: 1024 * 1024, // Mock value
-        };
-
-        let compliance_info = ComplianceInfo {
-            is_compliant: true,
-            risk_level: crate::archive::ComplianceLevel::Neutral,
-            warnings: vec!["This is a placeholder implementation".to_string()],
-            recommendations: vec!["Ensure you own the source files".to_string()],
+            peak_memory_mb: (bytes_extracted / (1024 * 1024)) as usize,
+            files_processed: entries.len(),
+            bytes_extracted,
         };
 
         info!(
-            "Extraction completed in {}ms, {} resources extracted",
-            metrics.duration_ms,
-            resources.len()
+            event = "extraction_job_status",
+            status = "completed",
+            job_id = %job_id,
+            duration_ms = metrics.duration_ms,
+            resources_extracted = resources.len(),
+            bytes_extracted = metrics.bytes_extracted
         );
 
         Ok(ExtractionResult {
@@ -157,23 +260,142 @@ impl Extractor {
         })
     }
 
-    /// Mock resource extraction for initial implementation
-    fn mock_extract_resources(
-        &self,
-        _source_path: &Path,
-    ) -> Result<Vec<Resource>, ExtractionError> {
-        // This is a placeholder - real implementation would use plugins
-        let texture = Resource::Texture(crate::resource::TextureResource {
-            name: "mock_texture.png".to_string(),
-            width: 256,
-            height: 256,
-            format: crate::resource::TextureFormat::RGBA8,
-            data: vec![255u8; 256 * 256 * 4], // White texture
-            mip_levels: 1,
-            usage_hint: Some(crate::resource::TextureUsage::Albedo),
-        });
+    fn map_compliance_result(result: &ComplianceResult) -> ComplianceInfo {
+        match result {
+            ComplianceResult::Allowed {
+                profile,
+                warnings,
+                recommendations,
+            } => ComplianceInfo {
+                is_compliant: true,
+                risk_level: profile.enforcement_level,
+                warnings: warnings.clone(),
+                recommendations: recommendations.clone(),
+            },
+            ComplianceResult::AllowedWithWarnings {
+                profile,
+                warnings,
+                recommendations,
+            } => ComplianceInfo {
+                is_compliant: true,
+                risk_level: profile.enforcement_level,
+                warnings: warnings.clone(),
+                recommendations: recommendations.clone(),
+            },
+            ComplianceResult::HighRiskWarning {
+                profile,
+                warnings,
+                explicit_consent_required,
+            } => ComplianceInfo {
+                is_compliant: !explicit_consent_required,
+                risk_level: profile.enforcement_level,
+                warnings: warnings.clone(),
+                recommendations: vec![
+                    "Explicit consent required before distributing extracted assets.".to_string(),
+                ],
+            },
+            ComplianceResult::Blocked {
+                profile,
+                reason,
+                alternatives,
+            } => ComplianceInfo {
+                is_compliant: false,
+                risk_level: profile.enforcement_level,
+                warnings: vec![reason.clone()],
+                recommendations: alternatives.clone(),
+            },
+        }
+    }
 
-        Ok(vec![texture])
+    fn emit_compliance_event(
+        job_id: &uuid::Uuid,
+        game_id: &str,
+        format: &str,
+        result: &ComplianceResult,
+    ) {
+        match result {
+            ComplianceResult::Allowed { profile, .. } => {
+                info!(
+                    event = "compliance_decision",
+                    job_id = %job_id,
+                    game_id,
+                    format,
+                    decision = "allowed",
+                    risk_level = ?profile.enforcement_level
+                );
+            }
+            ComplianceResult::AllowedWithWarnings { profile, .. } => {
+                info!(
+                    event = "compliance_decision",
+                    job_id = %job_id,
+                    game_id,
+                    format,
+                    decision = "allowed_with_warnings",
+                    risk_level = ?profile.enforcement_level
+                );
+            }
+            ComplianceResult::HighRiskWarning {
+                profile,
+                explicit_consent_required,
+                ..
+            } => {
+                info!(
+                    event = "compliance_decision",
+                    job_id = %job_id,
+                    game_id,
+                    format,
+                    decision = "high_risk_warning",
+                    explicit_consent_required = *explicit_consent_required,
+                    risk_level = ?profile.enforcement_level
+                );
+            }
+            ComplianceResult::Blocked {
+                profile, reason, ..
+            } => {
+                info!(
+                    event = "compliance_decision",
+                    job_id = %job_id,
+                    game_id,
+                    format,
+                    decision = "blocked",
+                    risk_level = ?profile.enforcement_level,
+                    reason
+                );
+            }
+        }
+    }
+
+    fn resource_from_entry(entry: &crate::archive::EntryMetadata, data: Vec<u8>) -> Resource {
+        if let Some(content_type) = Self::guess_text_content_type(&entry.path) {
+            if let Ok(content) = String::from_utf8(data.clone()) {
+                return Resource::Text(TextResource {
+                    name: entry.name.clone(),
+                    content_type,
+                    content,
+                });
+            }
+        }
+
+        Resource::Binary(BinaryResource {
+            name: entry.name.clone(),
+            mime_type: None,
+            data,
+        })
+    }
+
+    fn guess_text_content_type(path: &Path) -> Option<TextContentType> {
+        let extension = path.extension().and_then(|ext| ext.to_str())?;
+        let content_type = match extension.to_ascii_lowercase().as_str() {
+            "json" => TextContentType::JSON,
+            "xml" => TextContentType::XML,
+            "yaml" | "yml" => TextContentType::YAML,
+            "lua" | "js" | "cs" | "py" | "rb" | "ts" => TextContentType::Script,
+            "shader" | "hlsl" | "glsl" => TextContentType::Shader,
+            "txt" | "md" | "ini" => TextContentType::Plain,
+            _ => return None,
+        };
+
+        Some(content_type)
     }
 
     /// Batch extract multiple files
@@ -224,9 +446,128 @@ unsafe impl Sync for Extractor {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::archive::{ArchiveHandler, EntryId, EntryMetadata, PluginInfo, Provenance};
+    use crate::PluginFactory;
+    use anyhow::Result;
     use std::fs::File;
     use std::io::Write;
+    use std::path::PathBuf;
     use tempfile::TempDir;
+
+    struct TestPluginFactory;
+
+    struct TestArchive {
+        data: Vec<u8>,
+        entries: Vec<EntryMetadata>,
+        compliance_profile: crate::archive::ComplianceProfile,
+        provenance: Provenance,
+    }
+
+    impl PluginFactory for TestPluginFactory {
+        fn name(&self) -> &str {
+            "TestPlugin"
+        }
+
+        fn version(&self) -> &str {
+            "0.1.0"
+        }
+
+        fn supported_extensions(&self) -> Vec<&str> {
+            vec!["dat"]
+        }
+
+        fn can_handle(&self, _bytes: &[u8]) -> bool {
+            true
+        }
+
+        fn create_handler(&self, path: &std::path::Path) -> Result<Box<dyn ArchiveHandler>> {
+            Ok(Box::new(TestArchive::open(path)?))
+        }
+
+        fn compliance_info(&self) -> PluginInfo {
+            PluginInfo {
+                name: "TestPlugin".to_string(),
+                version: "0.1.0".to_string(),
+                author: Some("Test".to_string()),
+                compliance_verified: true,
+            }
+        }
+    }
+
+    impl ArchiveHandler for TestArchive {
+        fn detect(_bytes: &[u8]) -> bool
+        where
+            Self: Sized,
+        {
+            true
+        }
+
+        fn open(path: &std::path::Path) -> Result<Self>
+        where
+            Self: Sized,
+        {
+            let data = std::fs::read(path)?;
+            let file_name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("test.dat")
+                .to_string();
+
+            let entry = EntryMetadata {
+                id: EntryId::new("entry_0"),
+                name: file_name.clone(),
+                path: PathBuf::from(path),
+                size_compressed: None,
+                size_uncompressed: data.len() as u64,
+                file_type: path
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .map(|s| s.to_string()),
+                last_modified: None,
+                checksum: None,
+            };
+
+            let compliance_profile = ComplianceRegistry::default_profile();
+            let provenance = Provenance {
+                session_id: uuid::Uuid::new_v4(),
+                game_id: Some("test_game".to_string()),
+                source_hash: blake3::hash(&data).to_hex().to_string(),
+                source_path: path.to_path_buf(),
+                compliance_profile: compliance_profile.clone(),
+                extraction_time: chrono::Utc::now(),
+                aegis_version: crate::VERSION.to_string(),
+                plugin_info: PluginInfo {
+                    name: "TestPlugin".to_string(),
+                    version: "0.1.0".to_string(),
+                    author: Some("Test".to_string()),
+                    compliance_verified: true,
+                },
+            };
+
+            Ok(Self {
+                data,
+                entries: vec![entry],
+                compliance_profile,
+                provenance,
+            })
+        }
+
+        fn compliance_profile(&self) -> &crate::archive::ComplianceProfile {
+            &self.compliance_profile
+        }
+
+        fn list_entries(&self) -> Result<Vec<EntryMetadata>> {
+            Ok(self.entries.clone())
+        }
+
+        fn read_entry(&self, _id: &EntryId) -> Result<Vec<u8>> {
+            Ok(self.data.clone())
+        }
+
+        fn provenance(&self) -> &Provenance {
+            &self.provenance
+        }
+    }
 
     #[test]
     fn test_extractor_creation() {
@@ -252,7 +593,9 @@ mod tests {
     #[test]
     fn test_mock_extraction() {
         let compliance = ComplianceRegistry::new();
-        let mut extractor = Extractor::new(compliance);
+        let mut registry = PluginRegistry::new();
+        registry.register_plugin(Box::new(TestPluginFactory));
+        let mut extractor = Extractor::with_registries(&registry, &compliance, Config::default());
         let temp_dir = TempDir::new().unwrap();
 
         // Create a dummy file

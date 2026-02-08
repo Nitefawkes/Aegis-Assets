@@ -201,6 +201,10 @@ impl ComplianceRegistry {
     pub fn len(&self) -> usize {
         self.profiles.len()
     }
+
+    pub fn profiles(&self) -> HashMap<String, ComplianceProfile> {
+        self.profiles.clone()
+    }
 }
 
 impl Default for ComplianceRegistry {

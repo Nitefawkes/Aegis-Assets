@@ -10,7 +10,7 @@ use chrono::Utc;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use thiserror::Error;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
 /// Errors that can occur during extraction
@@ -88,6 +88,7 @@ pub struct Extractor {
     compliance_registry: Option<*const ComplianceRegistry>,
     config: Config,
     event_emitter: Arc<dyn ExtractionEventEmitter>,
+    audit_logger: Option<Arc<AuditLogger>>,
 }
 
 impl Extractor {
@@ -98,6 +99,7 @@ impl Extractor {
             compliance_registry: None, // Will be properly initialized
             config: Config::default(),
             event_emitter: Arc::new(NoopEventEmitter),
+            audit_logger: None,
         }
     }
 
@@ -112,6 +114,7 @@ impl Extractor {
             compliance_registry: Some(compliance_registry as *const _),
             config,
             event_emitter: Arc::new(NoopEventEmitter),
+            audit_logger: None,
         }
     }
 
@@ -204,9 +207,57 @@ impl Extractor {
         let registry = self.plugin_registry.map(|registry| unsafe { &*registry });
         let registry =
             registry.ok_or_else(|| ExtractionError::NoSuitablePlugin(source_path.to_path_buf()))?;
+        let factory = registry
+            .find_handler(source_path, &header)
+            .ok_or_else(|| ExtractionError::NoSuitablePlugin(source_path.to_path_buf()))?;
 
-        // For now, create a mock result
-        let resources = self.mock_extract_resources(source_path)?;
+        let handler = factory
+            .create_handler(source_path)
+            .map_err(|error| ExtractionError::PluginError {
+                plugin: factory.name().to_string(),
+                error: error.to_string(),
+            })?;
+        let entries = handler.list_entries().map_err(|error| {
+            ExtractionError::PluginError {
+                plugin: factory.name().to_string(),
+                error: error.to_string(),
+            }
+        })?;
+        let compliance_profile = handler.compliance_profile();
+        let compliance_info = self.build_compliance_info(
+            compliance_profile,
+            factory.name(),
+            handler.provenance().game_id.as_deref(),
+            handler.is_extraction_allowed(),
+            handler.compliance_warning(),
+        );
+        if !compliance_info.is_compliant {
+            self.emit_event(ExtractionEvent {
+                job_id,
+                occurred_at: Utc::now(),
+                kind: ExtractionEventKind::JobStateChange {
+                    state: JobState::Failed,
+                    message: Some("Extraction blocked by compliance policy.".to_string()),
+                },
+            });
+            return Err(ExtractionError::ComplianceViolation(format!(
+                "Extraction not allowed for {}",
+                compliance_profile.publisher
+            )));
+        }
+
+        let mut bytes_extracted = 0u64;
+        let mut resources = Vec::with_capacity(entries.len());
+        for entry in &entries {
+            let data = handler
+                .read_entry(&entry.id)
+                .map_err(|error| ExtractionError::PluginError {
+                    plugin: factory.name().to_string(),
+                    error: error.to_string(),
+                })?;
+            bytes_extracted += data.len() as u64;
+            resources.push(self.resource_from_entry(entry, data));
+        }
         let total_resources = resources.len();
         for (index, _resource) in resources.iter().enumerate() {
             self.emit_event(ExtractionEvent {
@@ -313,7 +364,7 @@ impl Extractor {
         Ok(ExtractionResult {
             source_path: source_path.to_path_buf(),
             resources,
-            warnings: vec![],
+            warnings: compliance_info.warnings.clone(),
             compliance_info,
             metrics,
         })
@@ -324,26 +375,163 @@ impl Extractor {
     }
 
     fn emit_event(&self, event: ExtractionEvent) {
-        self.event_emitter.emit(event);
+        self.event_emitter.emit(event.clone());
+        if let Some(logger) = &self.audit_logger {
+            if let Err(error) = logger.log_event(&event) {
+                warn!(?error, "Failed to write audit log event");
+            }
+        }
     }
 
-    /// Mock resource extraction for initial implementation
-    fn mock_extract_resources(
+    fn resource_from_entry(&self, entry: &EntryMetadata, data: Vec<u8>) -> Resource {
+        let extension = entry
+            .path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.to_ascii_lowercase());
+        if let Some(content_type) = extension
+            .as_deref()
+            .and_then(Self::text_content_type_for_extension)
+        {
+            if let Ok(content) = String::from_utf8(data.clone()) {
+                return Resource::Text(TextResource {
+                    name: entry.name.clone(),
+                    content_type,
+                    content,
+                });
+            }
+        }
+
+        Resource::Binary(BinaryResource {
+            name: entry.name.clone(),
+            mime_type: extension
+                .as_deref()
+                .map(|ext| format!("application/{}", ext)),
+            data,
+        })
+    }
+
+    fn text_content_type_for_extension(extension: &str) -> Option<TextContentType> {
+        match extension {
+            "json" => Some(TextContentType::JSON),
+            "xml" => Some(TextContentType::XML),
+            "yaml" | "yml" => Some(TextContentType::YAML),
+            "lua" | "cs" | "js" | "ts" | "py" => Some(TextContentType::Script),
+            "shader" | "hlsl" | "glsl" | "vert" | "frag" => Some(TextContentType::Shader),
+            "txt" | "md" | "cfg" | "ini" => Some(TextContentType::Plain),
+            _ => None,
+        }
+    }
+
+    fn build_compliance_info(
         &self,
-        _source_path: &Path,
-    ) -> Result<Vec<Resource>, ExtractionError> {
-        // This is a placeholder - real implementation would use plugins
-        let texture = Resource::Texture(crate::resource::TextureResource {
-            name: "mock_texture.png".to_string(),
-            width: 256,
-            height: 256,
-            format: crate::resource::TextureFormat::RGBA8,
-            data: vec![255u8; 256 * 256 * 4], // White texture
-            mip_levels: 1,
-            usage_hint: Some(crate::resource::TextureUsage::Albedo),
+        compliance_profile: &crate::archive::ComplianceProfile,
+        format: &str,
+        game_id: Option<&str>,
+        handler_allowed: bool,
+        handler_warning: Option<&str>,
+    ) -> ComplianceInfo {
+        let registry = self
+            .compliance_registry
+            .map(|registry| unsafe { &*registry });
+        let strict_mode = self
+            .config
+            .enterprise_config
+            .as_ref()
+            .map(|config| config.require_compliance_verification)
+            .unwrap_or(false);
+
+        let checker = registry.map(|registry| {
+            ComplianceChecker::from_profiles(registry.profiles(), strict_mode)
         });
 
-        Ok(vec![texture])
+        let result = match (checker, game_id) {
+            (Some(checker), Some(game_id)) => {
+                let format_key = format.to_ascii_lowercase();
+                Some(checker.check_extraction_allowed(game_id, &format_key))
+            }
+            _ => None,
+        };
+
+        let mut compliance_info = match result {
+            Some(result) => self.compliance_info_from_result(result),
+            None => ComplianceInfo {
+                is_compliant: handler_allowed,
+                risk_level: compliance_profile.enforcement_level,
+                warnings: handler_warning
+                    .map(|warning| vec![warning.to_string()])
+                    .unwrap_or_default(),
+                recommendations: Vec::new(),
+            },
+        };
+
+        if let Some(warning) = handler_warning {
+            if !compliance_info
+                .warnings
+                .iter()
+                .any(|existing| existing == warning)
+            {
+                compliance_info.warnings.push(warning.to_string());
+            }
+        }
+
+        compliance_info
+    }
+
+    fn compliance_info_from_result(&self, result: ComplianceResult) -> ComplianceInfo {
+        match result {
+            ComplianceResult::Allowed {
+                profile,
+                warnings,
+                recommendations,
+            }
+            | ComplianceResult::AllowedWithWarnings {
+                profile,
+                warnings,
+                recommendations,
+            } => ComplianceInfo {
+                is_compliant: true,
+                risk_level: profile.enforcement_level,
+                warnings,
+                recommendations,
+            },
+            ComplianceResult::HighRiskWarning { profile, warnings, .. } => ComplianceInfo {
+                is_compliant: true,
+                risk_level: profile.enforcement_level,
+                warnings,
+                recommendations: vec![
+                    "Explicit consent required for high-risk extractions.".to_string(),
+                ],
+            },
+            ComplianceResult::Blocked {
+                profile,
+                reason,
+                alternatives,
+            } => ComplianceInfo {
+                is_compliant: false,
+                risk_level: profile.enforcement_level,
+                warnings: vec![reason],
+                recommendations: alternatives,
+            },
+        }
+    }
+
+    fn initialize_audit_logger(&self, job_id: Uuid) -> Option<Arc<AuditLogger>> {
+        let enterprise_config = self.config.enterprise_config.as_ref()?;
+        if !enterprise_config.enable_audit_logs {
+            return None;
+        }
+
+        match AuditLogger::new(&enterprise_config.audit_log_dir, job_id) {
+            Ok(logger) => {
+                info!("Audit log enabled at {}", logger.path().display());
+                Some(Arc::new(logger))
+            }
+            Err(error) => {
+                warn!(?error, "Failed to initialize audit logger");
+                None
+            }
+        }
     }
 
     /// Batch extract multiple files
@@ -539,7 +727,7 @@ mod tests {
     }
 
     #[test]
-    fn test_mock_extraction() {
+    fn test_plugin_extraction() {
         let compliance = ComplianceRegistry::new();
         let mut registry = PluginRegistry::new();
         registry.register_plugin(Box::new(TestPluginFactory));

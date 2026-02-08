@@ -1,10 +1,8 @@
 use crate::{
-    archive::{ComplianceRegistry, EntryMetadata},
-    audit::AuditLogger,
+    archive::ComplianceRegistry,
+    audit::{AuditEvent, AuditEventKind, AuditLogWriter},
+    resource::Resource,
     compliance::{ComplianceChecker, ComplianceResult},
-    events::{
-        ExtractionEvent, ExtractionEventEmitter, ExtractionEventKind, JobState, NoopEventEmitter,
-    },
     resource::{BinaryResource, Resource, TextContentType, TextResource},
     Config, PluginRegistry,
 };
@@ -38,6 +36,9 @@ pub enum ExtractionError {
 
     #[error("Plugin error: {plugin}: {error}")]
     PluginError { plugin: String, error: String },
+
+    #[error("Audit log error: {0}")]
+    AuditLogError(String),
 }
 
 /// Result of an extraction operation
@@ -121,7 +122,7 @@ impl Extractor {
     pub fn extract_from_file(
         &mut self,
         source_path: &Path,
-        _output_dir: &Path,
+        output_dir: &Path,
     ) -> Result<ExtractionResult, ExtractionError> {
         let job_id = Uuid::new_v4();
         self.extract_from_file_with_job_id(source_path, _output_dir, job_id)
@@ -135,7 +136,25 @@ impl Extractor {
         job_id: Uuid,
     ) -> Result<ExtractionResult, ExtractionError> {
         let start_time = std::time::Instant::now();
-        self.audit_logger = self.initialize_audit_logger(job_id);
+        let job_id = Uuid::new_v4();
+        let audit_logger = AuditLogWriter::from_config(&self.config);
+        let log_event = |event: AuditEvent| {
+            if let Err(err) = audit_logger.log_event(&event) {
+                if !matches!(err, crate::audit::AuditError::Disabled) {
+                    error!("Failed to write audit event: {}", err);
+                }
+            }
+        };
+
+        info!("Starting extraction from: {}", source_path.display());
+        log_event(AuditEvent::new(
+            job_id,
+            AuditEventKind::JobStarted {
+                source_path: source_path.to_string_lossy().to_string(),
+                output_dir: output_dir.to_string_lossy().to_string(),
+            },
+        ));
+        let job_id = uuid::Uuid::new_v4();
 
         self.emit_event(ExtractionEvent {
             job_id,
@@ -150,14 +169,15 @@ impl Extractor {
 
         // Check if file exists
         if !source_path.exists() {
-            self.emit_event(ExtractionEvent {
+            log_event(AuditEvent::new(
                 job_id,
-                occurred_at: Utc::now(),
-                kind: ExtractionEventKind::JobStateChange {
-                    state: JobState::Failed,
-                    message: Some("Source file not found.".to_string()),
+                AuditEventKind::JobCompleted {
+                    success: false,
+                    duration_ms: start_time.elapsed().as_millis() as u64,
+                    resource_count: 0,
+                    error_message: Some("File not found".to_string()),
                 },
-            });
+            ));
             return Err(ExtractionError::FileNotFound(source_path.to_path_buf()));
         }
 
@@ -257,6 +277,59 @@ impl Extractor {
             files_processed: entries.len(),
             bytes_extracted,
         };
+        let verification_required = self
+            .config
+            .enterprise_config
+            .as_ref()
+            .map(|enterprise| enterprise.require_compliance_verification)
+            .unwrap_or(false);
+
+        log_event(AuditEvent::new(
+            job_id,
+            AuditEventKind::ComplianceDecision {
+                is_compliant: compliance_info.is_compliant,
+                risk_level: format!("{:?}", compliance_info.risk_level),
+                warnings: compliance_info.warnings.clone(),
+                recommendations: compliance_info.recommendations.clone(),
+                verification_required,
+            },
+        ));
+
+        if verification_required && !compliance_info.is_compliant {
+            log_event(AuditEvent::new(
+                job_id,
+                AuditEventKind::JobCompleted {
+                    success: false,
+                    duration_ms: start_time.elapsed().as_millis() as u64,
+                    resource_count: 0,
+                    error_message: Some("Compliance verification failed".to_string()),
+                },
+            ));
+            return Err(ExtractionError::ComplianceViolation(
+                "Compliance verification required".to_string(),
+            ));
+        }
+
+        log_event(AuditEvent::new(
+            job_id,
+            AuditEventKind::PluginUsed {
+                plugin_name: "mock".to_string(),
+                plugin_version: "0.0.0".to_string(),
+            },
+        ));
+
+        for resource in &resources {
+            let output_path = output_dir.join(resource.name());
+            log_event(AuditEvent::new(
+                job_id,
+                AuditEventKind::OutputGenerated {
+                    output_path: output_path.to_string_lossy().to_string(),
+                    resource_name: resource.name().to_string(),
+                    resource_type: resource.resource_type().to_string(),
+                    estimated_memory_bytes: resource.estimated_memory_usage(),
+                },
+            ));
+        }
 
         self.emit_event(ExtractionEvent {
             job_id,
@@ -278,14 +351,15 @@ impl Extractor {
             bytes_extracted = metrics.bytes_extracted
         );
 
-        self.emit_event(ExtractionEvent {
+        log_event(AuditEvent::new(
             job_id,
-            occurred_at: Utc::now(),
-            kind: ExtractionEventKind::JobStateChange {
-                state: JobState::Completed,
-                message: Some("Extraction completed.".to_string()),
+            AuditEventKind::JobCompleted {
+                success: true,
+                duration_ms: metrics.duration_ms,
+                resource_count: resources.len(),
+                error_message: None,
             },
-        });
+        ));
 
         Ok(ExtractionResult {
             source_path: source_path.to_path_buf(),

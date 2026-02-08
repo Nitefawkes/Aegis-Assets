@@ -36,6 +36,7 @@ struct AppState {
     api_key: Option<String>,
     rate_limiter: RateLimiter,
     plugin_registry: Arc<PluginRegistry>,
+    compliance_registry: Arc<ComplianceRegistry>,
 }
 
 #[derive(Clone)]
@@ -127,12 +128,14 @@ async fn main() {
     let mut registry = PluginRegistry::new();
     registry.register_plugin(Box::new(UnityPluginFactory));
     let registry = Arc::new(registry);
+    let compliance_registry = load_compliance_registry();
 
     let state = Arc::new(AppState {
         event_tx,
         api_key,
         rate_limiter,
         plugin_registry: registry,
+        compliance_registry,
     });
 
     let app = Router::new()
@@ -155,6 +158,30 @@ async fn main() {
     )
     .await
     .expect("server failed");
+}
+
+fn load_compliance_registry() -> Arc<ComplianceRegistry> {
+    let dir = std::env::var("AEGIS_COMPLIANCE_PROFILE_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("compliance-profiles"));
+    match ComplianceRegistry::load_from_directory(&dir) {
+        Ok(registry) => {
+            info!(
+                compliance_profiles = registry.len(),
+                path = %dir.display(),
+                "Loaded compliance profiles"
+            );
+            Arc::new(registry)
+        }
+        Err(error) => {
+            warn!(
+                ?error,
+                path = %dir.display(),
+                "Failed to load compliance profiles; using empty registry"
+            );
+            Arc::new(ComplianceRegistry::new())
+        }
+    }
 }
 
 async fn stream_events(
@@ -185,6 +212,7 @@ async fn start_extract_job(
     let output_dir = PathBuf::from(request.output_dir);
     let event_sender = state.event_tx.clone();
     let plugin_registry = state.plugin_registry.clone();
+    let compliance_registry = state.compliance_registry.clone();
 
     validate_path(&source_path).map_err(|error| (StatusCode::BAD_REQUEST, error))?;
     validate_path(&output_dir).map_err(|error| (StatusCode::BAD_REQUEST, error))?;
@@ -197,9 +225,8 @@ async fn start_extract_job(
     );
 
     tokio::task::spawn_blocking(move || {
-        let compliance = ComplianceRegistry::new();
         let mut extractor =
-            Extractor::with_registries(&plugin_registry, &compliance, Config::default());
+            Extractor::with_registries(&plugin_registry, &compliance_registry, Config::default());
         extractor.set_event_emitter(Arc::new(ChannelEventEmitter {
             sender: event_sender,
         }));

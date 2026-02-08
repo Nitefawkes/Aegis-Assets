@@ -1,5 +1,7 @@
 use anyhow::{bail, Context, Result};
 use std::io::{Cursor, Read};
+#[cfg(feature = "lzham")]
+use std::io::BufReader;
 
 /// Decompress LZ4 compressed data
 pub fn decompress_lz4(compressed: &[u8], expected_size: usize) -> Result<Vec<u8>> {
@@ -65,6 +67,33 @@ pub fn decompress_lzma(compressed: &[u8], expected_size: usize) -> Result<Vec<u8
     Ok(output)
 }
 
+/// Decompress LZHAM compressed data
+#[cfg(feature = "lzham")]
+pub fn decompress_lzham(compressed: &[u8], expected_size: usize) -> Result<Vec<u8>> {
+    let mut input = BufReader::new(Cursor::new(compressed));
+    let mut output = Vec::with_capacity(expected_size);
+    let status = lzham::decompress(&mut input, &mut output, expected_size);
+
+    if !status.is_success() {
+        bail!("LZHAM decompression failed: {:?}", status);
+    }
+
+    if output.len() != expected_size {
+        bail!(
+            "LZHAM decompression size mismatch: expected {}, got {}",
+            expected_size,
+            output.len()
+        );
+    }
+
+    Ok(output)
+}
+
+#[cfg(not(feature = "lzham"))]
+pub fn decompress_lzham(_compressed: &[u8], _expected_size: usize) -> Result<Vec<u8>> {
+    bail!("LZHAM support not enabled; rebuild with the lzham feature")
+}
+
 /// Decompress data based on Unity compression type
 pub fn decompress_unity_data(
     compressed: &[u8],
@@ -98,7 +127,7 @@ pub fn decompress_unity_data(
         }
         4 => {
             // LZHAM
-            bail!("LZHAM compression is not supported yet");
+            decompress_lzham(compressed, expected_size)
         }
         _ => {
             bail!("Unknown Unity compression type: {}", compression_type);

@@ -246,3 +246,85 @@ body {
   color: #b9c5ef;
   font-size: 13px;
 }
+
+.operations {
+  display: grid;
+  gap: 20px;
+}
+
+.form {
+  display: grid;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.form__field {
+  display: grid;
+  gap: 8px;
+}
+
+.form__field label {
+  font-size: 13px;
+  color: #b9c5ef;
+}
+
+.form__field input {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid #2c3458;
+  background: #0f1428;
+  color: #dce3ff;
+}
+
+.form__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.button {
+  border: none;
+  border-radius: 12px;
+  background: #4e6bff;
+  color: #ffffff;
+  padding: 10px 18px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.button--ghost {
+  background: transparent;
+  border: 1px solid #3a4572;
+  color: #cbd5ff;
+}
+
+.event-list,
+.list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+  display: grid;
+  gap: 12px;
+}
+
+.event-card {
+  border: 1px solid #242b4b;
+  border-radius: 14px;
+  padding: 14px;
+  background: #151b33;
+  display: grid;
+  gap: 8px;
+}
+
+.event-card__meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #a9b4d4;
+  font-size: 12px;
+}
+
+.empty-state {
+  color: #97a3c8;
+  font-size: 13px;
+}

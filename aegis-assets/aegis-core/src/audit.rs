@@ -187,4 +187,84 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].job_id, job_id);
     }
+
+    pub fn hash_path(&self) -> &Path {
+        &self.hash_path
+    }
+}
+
+pub fn verify_audit_log(log_path: &Path, hash_path: &Path) -> Result<()> {
+    let log_file = File::open(log_path).context("Failed to open audit log file")?;
+    let hash_file = File::open(hash_path).context("Failed to open audit hash file")?;
+    let log_reader = BufReader::new(log_file);
+    let hash_reader = BufReader::new(hash_file);
+    let mut prev_hash = blake3::hash(&[]);
+
+    for (index, (log_line, hash_line)) in log_reader
+        .lines()
+        .zip(hash_reader.lines())
+        .enumerate()
+    {
+        let log_line = log_line.context("Failed to read audit log line")?;
+        let hash_line = hash_line.context("Failed to read audit hash line")?;
+        let mut parts = hash_line.split_whitespace();
+        let reported_index = parts
+            .next()
+            .context("Missing audit hash index")?
+            .parse::<u64>()
+            .context("Invalid audit hash index")?;
+        let reported_hash = parts
+            .next()
+            .context("Missing audit hash value")?;
+        if reported_index != index as u64 {
+            anyhow::bail!(
+                "Audit hash index mismatch: expected {}, got {}",
+                index,
+                reported_index
+            );
+        }
+
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(prev_hash.as_bytes());
+        hasher.update(log_line.as_bytes());
+        let computed = hasher.finalize();
+        if computed.to_hex().as_str() != reported_hash {
+            anyhow::bail!(
+                "Audit hash mismatch at index {}: expected {}, got {}",
+                index,
+                computed.to_hex(),
+                reported_hash
+            );
+        }
+
+        prev_hash = computed;
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::events::{ExtractionEventKind, JobState};
+    use chrono::Utc;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_audit_log_hash_chain() -> Result<()> {
+        let tmp = TempDir::new().context("create temp dir")?;
+        let job_id = Uuid::new_v4();
+        let logger = AuditLogger::new(tmp.path(), job_id)?;
+        let event = ExtractionEvent {
+            job_id,
+            occurred_at: Utc::now(),
+            kind: ExtractionEventKind::JobStateChange {
+                state: JobState::Queued,
+                message: Some("Test event".to_string()),
+            },
+        };
+        logger.log_event(&event)?;
+        verify_audit_log(logger.path(), logger.hash_path())?;
+        Ok(())
+    }
 }

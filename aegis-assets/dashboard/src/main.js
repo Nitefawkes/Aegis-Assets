@@ -1,10 +1,13 @@
 import {
   getApiBase,
+  getApiKey,
   getAssets,
   getAuditEvents,
   getJobTimeline,
   getPolicyProfiles,
-  getRiskHeatmap
+  getRiskHeatmap,
+  startExtractJob,
+  streamExtractionEvents
 } from "./controlPlaneApi.js";
 import { createElement } from "./utils/dom.js";
 import { RiskHeatmap } from "./components/RiskHeatmap.js";
@@ -12,6 +15,7 @@ import { JobTimeline } from "./components/JobTimeline.js";
 import { PolicyStudio } from "./components/PolicyStudio.js";
 import { AssetGallery } from "./components/AssetGallery.js";
 import { AuditTimeline } from "./components/AuditTimeline.js";
+import { OperationsConsole } from "./components/OperationsConsole.js";
 
 const main = document.getElementById("main");
 const apiBaseLabel = document.getElementById("api-base");
@@ -26,6 +30,12 @@ const state = {
   audit: {
     events: [],
     filters: { query: "", category: "All", actor: "All", categories: ["All"], actors: ["All"] }
+  },
+  operations: {
+    statusMessages: [],
+    events: [],
+    compliance: null,
+    lastJobId: null
   },
   status: null
 };
@@ -151,6 +161,78 @@ async function loadData() {
   }
 }
 
+function updateOperationsStatus(messages) {
+  state.operations.statusMessages = messages;
+}
+
+function recordComplianceDecision(decision) {
+  state.operations.compliance = {
+    status: decision.is_compliant ? "Compliant" : "Blocked",
+    riskLevel: decision.risk_level ?? "Unknown",
+    warnings: decision.warnings ?? []
+  };
+}
+
+function formatEvent(event) {
+  const kind = event.kind;
+  if (kind?.JobStateChange) {
+    return {
+      title: `Job ${kind.JobStateChange.state}`,
+      detail: kind.JobStateChange.message ?? "",
+      kind: "Job state",
+      timestamp: event.occurred_at
+    };
+  }
+  if (kind?.ComplianceDecision) {
+    recordComplianceDecision(kind.ComplianceDecision);
+    return {
+      title: "Compliance decision",
+      detail: (kind.ComplianceDecision.warnings ?? []).join(" ") || "No warnings.",
+      kind: "Compliance",
+      timestamp: event.occurred_at
+    };
+  }
+  if (kind?.AssetIndexingProgress) {
+    return {
+      title: "Indexing assets",
+      detail: `${kind.AssetIndexingProgress.indexed} / ${kind.AssetIndexingProgress.total} indexed`,
+      kind: "Indexing",
+      timestamp: event.occurred_at
+    };
+  }
+  return {
+    title: "Extraction event",
+    detail: JSON.stringify(event),
+    kind: "Event",
+    timestamp: event.occurred_at
+  };
+}
+
+async function startOperationsStream() {
+  const statusMessages = [];
+  statusMessages.push(`API base: ${getApiBase()}`);
+  const apiKey = getApiKey();
+  statusMessages.push(apiKey ? "API key configured." : "API key missing.");
+  updateOperationsStatus(statusMessages);
+
+  try {
+    await streamExtractionEvents({
+      onEvent: (event) => {
+        const formatted = formatEvent(event);
+        state.operations.events = [formatted, ...state.operations.events].slice(0, 25);
+        if (window.location.hash.replace("#", "") === "operations") {
+          renderOperations();
+        }
+      },
+      onError: (error) => {
+        console.error(error);
+      }
+    });
+  } catch (error) {
+    updateOperationsStatus([...statusMessages, "Event stream unavailable."]);
+  }
+}
+
 function renderPage(title, description, content) {
   main.innerHTML = "";
   const header = createElement("div", {
@@ -171,6 +253,16 @@ function renderPage(title, description, content) {
 }
 
 const routes = {
+  operations: {
+    title: "Operations console",
+    description: "Submit extraction jobs and monitor live compliance events.",
+    render: () =>
+      OperationsConsole({
+        data: state.operations,
+        onSubmitJob: handleJobSubmit,
+        onRefresh: () => renderOperations()
+      })
+  },
   risk: {
     title: "Risk heatmap",
     description: "Live risk posture by profile, project, and publisher.",
@@ -233,10 +325,12 @@ function handleAuditFilterChange(update) {
 }
 
 async function navigate() {
-  const route = window.location.hash.replace("#", "") || "risk";
+  const route = window.location.hash.replace("#", "") || "operations";
   const page = routes[route] ?? routes.risk;
   setActiveNav(route);
-  await loadData();
+  if (route !== "operations") {
+    await loadData();
+  }
   if (route === "audit") {
     const filteredEvents = applyAuditFilters();
     renderPage(page.title, page.description, AuditTimeline({
@@ -250,4 +344,24 @@ async function navigate() {
 
 window.addEventListener("hashchange", navigate);
 
+function renderOperations() {
+  renderPage(routes.operations.title, routes.operations.description, routes.operations.render());
+}
+
+async function handleJobSubmit(payload) {
+  try {
+    const response = await startExtractJob(payload);
+    state.operations.lastJobId = response?.job_id ?? null;
+    updateOperationsStatus([
+      `Job submitted: ${state.operations.lastJobId ?? "unknown"}`,
+      ...state.operations.statusMessages
+    ]);
+    renderOperations();
+  } catch (error) {
+    updateOperationsStatus([`Job submission failed: ${error.message}`]);
+    renderOperations();
+  }
+}
+
+startOperationsStream();
 navigate();

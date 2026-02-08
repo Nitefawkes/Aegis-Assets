@@ -13,7 +13,7 @@ use tracing::{debug, info, warn};
 mod compression;
 mod formats;
 
-use compression::{decompress_lz4, decompress_lzma};
+use compression::decompress_unity_data;
 use formats::{AssetBundle, SerializedFile, UnityVersion};
 
 /// Unity plugin factory
@@ -336,14 +336,11 @@ impl UnityArchive {
 
         let compressed_data = &file_data[start..end];
 
-        match block.compression_type {
-            0 => Ok(compressed_data.to_vec()), // No compression
-            1 => bail!("LZMA compression not yet implemented"),
-            2 => decompress_lz4(compressed_data, block.size as usize), // LZ4
-            3 => bail!("LZ4HC compression not yet implemented"),
-            4 => bail!("LZHAM compression not yet implemented"),
-            _ => bail!("Unknown compression type: {}", block.compression_type),
-        }
+        decompress_unity_data(
+            compressed_data,
+            block.compression_type,
+            block.size as usize,
+        )
     }
 
     /// Extract data from a serialized object

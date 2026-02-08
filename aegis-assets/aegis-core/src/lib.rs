@@ -46,6 +46,7 @@
 //! ```
 
 pub mod archive;
+pub mod audit;
 pub mod compliance;
 pub mod events;
 pub mod export;

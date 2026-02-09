@@ -9,6 +9,7 @@ description = "Control-plane service for Aegis-Assets"
 
 [dependencies]
 aegis-core = { path = "../aegis-core" }
+aegis-unity-plugin = { path = "../aegis-plugins/unity" }
 axum = "0.7"
 chrono.workspace = true
 serde.workspace = true
@@ -18,3 +19,4 @@ tokio-stream = { version = "0.1", features = ["sync"] }
 tracing.workspace = true
 tracing-subscriber.workspace = true
 uuid.workspace = true
+tower = "0.4"

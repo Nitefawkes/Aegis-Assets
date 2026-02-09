@@ -19,6 +19,13 @@ impl ComplianceChecker {
         }
     }
 
+    pub fn from_profiles(profiles: HashMap<String, ComplianceProfile>, strict_mode: bool) -> Self {
+        Self {
+            profiles,
+            strict_mode,
+        }
+    }
+
     /// Enable strict compliance mode (block all high-risk operations)
     pub fn with_strict_mode(mut self) -> Self {
         self.strict_mode = true;

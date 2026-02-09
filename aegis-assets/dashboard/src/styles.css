@@ -324,6 +324,42 @@ body {
   font-size: 12px;
 }
 
+.job-card {
+  border: 1px solid #242b4b;
+  border-radius: 14px;
+  padding: 14px;
+  background: #141b30;
+  display: grid;
+  gap: 6px;
+}
+
+.job-card__meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #a9b4d4;
+  font-size: 12px;
+}
+
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  color: #a9b4d4;
+  font-size: 13px;
+}
+
+.muted {
+  color: #a9b4d4;
+  font-size: 12px;
+  margin-top: 0;
+}
+
+.recommendations h4 {
+  margin: 16px 0 8px;
+}
+
 .empty-state {
   color: #97a3c8;
   font-size: 13px;

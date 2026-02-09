@@ -35,7 +35,9 @@ const state = {
     statusMessages: [],
     events: [],
     compliance: null,
-    lastJobId: null
+    lastJobId: null,
+    jobs: [],
+    streamStatus: "Connecting"
   },
   status: null
 };
@@ -165,11 +167,16 @@ function updateOperationsStatus(messages) {
   state.operations.statusMessages = messages;
 }
 
+function updateStreamStatus(status) {
+  state.operations.streamStatus = status;
+}
+
 function recordComplianceDecision(decision) {
   state.operations.compliance = {
     status: decision.is_compliant ? "Compliant" : "Blocked",
     riskLevel: decision.risk_level ?? "Unknown",
-    warnings: decision.warnings ?? []
+    warnings: decision.warnings ?? [],
+    recommendations: decision.recommendations ?? []
   };
 }
 
@@ -213,6 +220,7 @@ async function startOperationsStream() {
   statusMessages.push(`API base: ${getApiBase()}`);
   const apiKey = getApiKey();
   statusMessages.push(apiKey ? "API key configured." : "API key missing.");
+  updateStreamStatus("Connecting");
   updateOperationsStatus(statusMessages);
 
   try {
@@ -220,15 +228,18 @@ async function startOperationsStream() {
       onEvent: (event) => {
         const formatted = formatEvent(event);
         state.operations.events = [formatted, ...state.operations.events].slice(0, 25);
+        updateStreamStatus("Connected");
         if (window.location.hash.replace("#", "") === "operations") {
           renderOperations();
         }
       },
       onError: (error) => {
         console.error(error);
+        updateStreamStatus("Error");
       }
     });
   } catch (error) {
+    updateStreamStatus("Disconnected");
     updateOperationsStatus([...statusMessages, "Event stream unavailable."]);
   }
 }
@@ -352,6 +363,16 @@ async function handleJobSubmit(payload) {
   try {
     const response = await startExtractJob(payload);
     state.operations.lastJobId = response?.job_id ?? null;
+    state.operations.jobs = [
+      {
+        id: state.operations.lastJobId ?? "unknown",
+        source: payload.source_path,
+        output: payload.output_dir,
+        submittedAt: Date.now(),
+        status: "Submitted"
+      },
+      ...state.operations.jobs
+    ].slice(0, 5);
     updateOperationsStatus([
       `Job submitted: ${state.operations.lastJobId ?? "unknown"}`,
       ...state.operations.statusMessages

@@ -1,8 +1,10 @@
 use crate::{
-    archive::ComplianceRegistry,
-    audit::{AuditEvent, AuditEventKind, AuditLogWriter},
-    resource::Resource,
+    archive::{ComplianceRegistry, EntryMetadata},
+    audit::AuditLogger,
     compliance::{ComplianceChecker, ComplianceResult},
+    events::{
+        ExtractionEvent, ExtractionEventEmitter, ExtractionEventKind, JobState, NoopEventEmitter,
+    },
     resource::{BinaryResource, Resource, TextContentType, TextResource},
     Config, PluginRegistry,
 };
@@ -136,25 +138,7 @@ impl Extractor {
         job_id: Uuid,
     ) -> Result<ExtractionResult, ExtractionError> {
         let start_time = std::time::Instant::now();
-        let job_id = Uuid::new_v4();
-        let audit_logger = AuditLogWriter::from_config(&self.config);
-        let log_event = |event: AuditEvent| {
-            if let Err(err) = audit_logger.log_event(&event) {
-                if !matches!(err, crate::audit::AuditError::Disabled) {
-                    error!("Failed to write audit event: {}", err);
-                }
-            }
-        };
-
-        info!("Starting extraction from: {}", source_path.display());
-        log_event(AuditEvent::new(
-            job_id,
-            AuditEventKind::JobStarted {
-                source_path: source_path.to_string_lossy().to_string(),
-                output_dir: output_dir.to_string_lossy().to_string(),
-            },
-        ));
-        let job_id = uuid::Uuid::new_v4();
+        self.audit_logger = self.initialize_audit_logger(job_id);
 
         self.emit_event(ExtractionEvent {
             job_id,

@@ -5,6 +5,26 @@ export function OperationsConsole({ data, onSubmitJob, onRefresh }) {
     createElement("li", { text: message })
   );
 
+  const jobItems = data.jobs.length
+    ? data.jobs.map((job) =>
+        createElement("li", {
+          className: "job-card",
+          children: [
+            createElement("div", {
+              className: "job-card__meta",
+              children: [
+                createElement("span", { className: "tag", text: job.status }),
+                createElement("span", { text: formatTimestamp(job.submittedAt) })
+              ]
+            }),
+            createElement("h4", { text: job.id }),
+            createElement("p", { text: `Source: ${job.source}` }),
+            createElement("p", { text: `Output: ${job.output}` })
+          ]
+        })
+      )
+    : [createElement("li", { className: "empty-state", text: "No jobs submitted yet." })];
+
   const eventItems = data.events.length
     ? data.events.map((event) =>
         createElement("li", {
@@ -40,6 +60,20 @@ export function OperationsConsole({ data, onSubmitJob, onRefresh }) {
             children: compliance.warnings.map((warning) =>
               createElement("li", { text: warning })
             )
+          })
+        : null,
+      compliance?.recommendations?.length
+        ? createElement("div", {
+            className: "recommendations",
+            children: [
+              createElement("h4", { text: "Recommendations" }),
+              createElement("ul", {
+                className: "list",
+                children: compliance.recommendations.map((rec) =>
+                  createElement("li", { text: rec })
+                )
+              })
+            ]
           })
         : null
     ]
@@ -118,6 +152,10 @@ export function OperationsConsole({ data, onSubmitJob, onRefresh }) {
           createElement("p", {
             text: "Create a new extraction job and monitor real-time events."
           }),
+          createElement("p", {
+            className: "muted",
+            text: "Set window.CONTROL_PLANE_API_KEY for authenticated requests."
+          }),
           jobForm
         ]
       }),
@@ -125,7 +163,21 @@ export function OperationsConsole({ data, onSubmitJob, onRefresh }) {
         className: "card",
         children: [
           createElement("h3", { text: "Control-plane status" }),
+          createElement("div", {
+            className: "status-row",
+            children: [
+              createElement("span", { className: "tag", text: data.streamStatus }),
+              createElement("span", { text: "Event stream" })
+            ]
+          }),
           createElement("ul", { className: "list", children: statusItems })
+        ]
+      }),
+      createElement("div", {
+        className: "card",
+        children: [
+          createElement("h3", { text: "Recent jobs" }),
+          createElement("ul", { className: "event-list", children: jobItems })
         ]
       }),
       complianceCard,

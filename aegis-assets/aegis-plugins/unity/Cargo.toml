@@ -28,10 +28,12 @@ tracing.workspace = true
 
 # Unity-specific dependencies
 lzma-rs = "0.3"      # LZMA compression used in some Unity versions
+lzham = { version = "0.1.1", optional = true } # LZHAM compression used in some Unity bundles
 
 [features]
 default = ["all-versions"]
 all-versions = ["unity-3", "unity-4", "unity-5", "unity-2017", "unity-2018", "unity-2019", "unity-2020", "unity-2021", "unity-2022", "unity-2023"]
+lzham = ["dep:lzham"]
 unity-3 = []
 unity-4 = []
 unity-5 = []

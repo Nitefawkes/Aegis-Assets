@@ -1,10 +1,14 @@
 import {
   getApiBase,
+  getApiKey,
   getAssets,
   getAuditEvents,
   getJobTimeline,
   getPolicyProfiles,
-  getRiskHeatmap
+  getRiskHeatmap,
+  startExtractJob,
+  streamExtractionEvents,
+  verifyAuditForJob
 } from "./controlPlaneApi.js";
 import { createElement } from "./utils/dom.js";
 import { RiskHeatmap } from "./components/RiskHeatmap.js";
@@ -12,6 +16,7 @@ import { JobTimeline } from "./components/JobTimeline.js";
 import { PolicyStudio } from "./components/PolicyStudio.js";
 import { AssetGallery } from "./components/AssetGallery.js";
 import { AuditTimeline } from "./components/AuditTimeline.js";
+import { OperationsConsole } from "./components/OperationsConsole.js";
 
 const main = document.getElementById("main");
 const apiBaseLabel = document.getElementById("api-base");
@@ -27,8 +32,23 @@ const state = {
     events: [],
     filters: { query: "", category: "All", actor: "All", categories: ["All"], actors: ["All"] }
   },
+  operations: {
+    statusMessages: [],
+    events: [],
+    compliance: null,
+    lastJobId: null,
+    jobs: [],
+    streamStatus: "Connecting",
+    selectedJobId: null,
+    lastStreamError: null,
+    lastSubmissionError: null,
+    streamConnectedAt: null,
+    lastAuditVerification: null
+  },
   status: null
 };
+
+const OPERATIONS_JOBS_KEY = "aegis.operations.jobs";
 
 const fallbackData = {
   risk: {
@@ -151,6 +171,159 @@ async function loadData() {
   }
 }
 
+function updateOperationsStatus(messages) {
+  state.operations.statusMessages = messages;
+}
+
+function loadSavedJobs() {
+  try {
+    const saved = window.localStorage.getItem(OPERATIONS_JOBS_KEY);
+    if (!saved) {
+      return;
+    }
+    const jobs = JSON.parse(saved);
+    if (Array.isArray(jobs)) {
+      state.operations.jobs = jobs;
+      state.operations.selectedJobId = jobs[0]?.id ?? null;
+    }
+  } catch (error) {
+    console.error("Failed to load saved jobs", error);
+  }
+}
+
+function saveJobs() {
+  try {
+    window.localStorage.setItem(OPERATIONS_JOBS_KEY, JSON.stringify(state.operations.jobs));
+  } catch (error) {
+    console.error("Failed to persist jobs", error);
+  }
+}
+
+function selectedJob() {
+  return state.operations.jobs.find((job) => job.id === state.operations.selectedJobId) ?? null;
+}
+
+function selectedJobEvents() {
+  const job = selectedJob();
+  if (!job) {
+    return state.operations.events;
+  }
+  return state.operations.events.filter((event) => event.jobId === job.id);
+}
+
+function updateStreamStatus(status) {
+  state.operations.streamStatus = status;
+}
+
+function updateStreamError(error) {
+  state.operations.lastStreamError = error;
+}
+
+function updateSubmissionError(error) {
+  state.operations.lastSubmissionError = error;
+}
+
+function recordComplianceDecision(decision) {
+  state.operations.compliance = {
+    status: decision.is_compliant ? "Compliant" : "Blocked",
+    riskLevel: decision.risk_level ?? "Unknown",
+    warnings: decision.warnings ?? [],
+    recommendations: decision.recommendations ?? []
+  };
+}
+
+function formatEvent(event) {
+  const jobId = event.job_id;
+  const kind = event.kind;
+  if (kind?.JobStateChange) {
+    syncJobStatus(jobId, kind.JobStateChange.state, kind.JobStateChange.message ?? "");
+    return {
+      title: `Job ${kind.JobStateChange.state}`,
+      detail: kind.JobStateChange.message ?? "",
+      kind: "Job state",
+      timestamp: event.occurred_at,
+      jobId
+    };
+  }
+  if (kind?.ComplianceDecision) {
+    recordComplianceDecision(kind.ComplianceDecision);
+    return {
+      title: "Compliance decision",
+      detail: (kind.ComplianceDecision.warnings ?? []).join(" ") || "No warnings.",
+      kind: "Compliance",
+      timestamp: event.occurred_at,
+      jobId
+    };
+  }
+  if (kind?.AssetIndexingProgress) {
+    return {
+      title: "Indexing assets",
+      detail: `${kind.AssetIndexingProgress.indexed} / ${kind.AssetIndexingProgress.total} indexed`,
+      kind: "Indexing",
+      timestamp: event.occurred_at,
+      jobId
+    };
+  }
+  return {
+    title: "Extraction event",
+    detail: JSON.stringify(event),
+    kind: "Event",
+    timestamp: event.occurred_at,
+    jobId
+  };
+}
+
+function syncJobStatus(jobId, status, message) {
+  if (!jobId) {
+    return;
+  }
+  const index = state.operations.jobs.findIndex((job) => job.id === jobId);
+  if (index === -1) {
+    return;
+  }
+  const current = state.operations.jobs[index];
+  state.operations.jobs[index] = {
+    ...current,
+    status,
+    lastMessage: message,
+    updatedAt: Date.now()
+  };
+  saveJobs();
+}
+
+async function startOperationsStream() {
+  const statusMessages = [];
+  statusMessages.push(`API base: ${getApiBase()}`);
+  const apiKey = getApiKey();
+  statusMessages.push(apiKey ? "API key configured." : "API key missing.");
+  updateStreamStatus("Connecting");
+  updateOperationsStatus(statusMessages);
+
+  try {
+    await streamExtractionEvents({
+      onEvent: (event) => {
+        const formatted = formatEvent(event);
+        state.operations.events = [formatted, ...state.operations.events].slice(0, 25);
+        updateStreamStatus("Connected");
+        updateStreamError(null);
+        state.operations.streamConnectedAt = Date.now();
+        if (window.location.hash.replace("#", "") === "operations") {
+          renderOperations();
+        }
+      },
+      onError: (error) => {
+        console.error(error);
+        updateStreamStatus("Error");
+        updateStreamError(error?.message ?? "Unknown stream error");
+      }
+    });
+  } catch (error) {
+    updateStreamStatus("Disconnected");
+    updateStreamError(error?.message ?? "Event stream unavailable.");
+    updateOperationsStatus([...statusMessages, "Event stream unavailable."]);
+  }
+}
+
 function renderPage(title, description, content) {
   main.innerHTML = "";
   const header = createElement("div", {
@@ -171,6 +344,25 @@ function renderPage(title, description, content) {
 }
 
 const routes = {
+  operations: {
+    title: "Operations console",
+    description: "Submit extraction jobs and monitor live compliance events.",
+    render: () =>
+      OperationsConsole({
+        data: {
+          ...state.operations,
+          selectedEvents: selectedJobEvents()
+        },
+        onSubmitJob: handleJobSubmit,
+        onRefresh: () => renderOperations(),
+        onSelectJob: handleSelectJob,
+        onRetryJob: handleRetryJob,
+        onRemoveJob: handleRemoveJob,
+        onClearJobs: handleClearJobs,
+        onReconnect: handleReconnect,
+        onVerifyAudit: handleVerifyAudit
+      })
+  },
   risk: {
     title: "Risk heatmap",
     description: "Live risk posture by profile, project, and publisher.",
@@ -233,10 +425,12 @@ function handleAuditFilterChange(update) {
 }
 
 async function navigate() {
-  const route = window.location.hash.replace("#", "") || "risk";
+  const route = window.location.hash.replace("#", "") || "operations";
   const page = routes[route] ?? routes.risk;
   setActiveNav(route);
-  await loadData();
+  if (route !== "operations") {
+    await loadData();
+  }
   if (route === "audit") {
     const filteredEvents = applyAuditFilters();
     renderPage(page.title, page.description, AuditTimeline({
@@ -250,4 +444,102 @@ async function navigate() {
 
 window.addEventListener("hashchange", navigate);
 
+function renderOperations() {
+  renderPage(routes.operations.title, routes.operations.description, routes.operations.render());
+}
+
+async function handleJobSubmit(payload) {
+  try {
+    const response = await startExtractJob(payload);
+    state.operations.lastJobId = response?.job_id ?? null;
+    state.operations.jobs = [
+      {
+        id: state.operations.lastJobId ?? "unknown",
+        source: payload.source_path,
+        output: payload.output_dir,
+        submittedAt: Date.now(),
+        status: "Submitted",
+        lastMessage: "Job queued"
+      },
+      ...state.operations.jobs
+    ].slice(0, 5);
+    state.operations.selectedJobId = state.operations.jobs[0]?.id ?? null;
+    updateSubmissionError(null);
+    saveJobs();
+    updateOperationsStatus([
+      `Job submitted: ${state.operations.lastJobId ?? "unknown"}`,
+      ...state.operations.statusMessages
+    ]);
+    renderOperations();
+  } catch (error) {
+    updateSubmissionError(error?.message ?? "Job submission failed.");
+    updateOperationsStatus([`Job submission failed: ${error.message}`]);
+    renderOperations();
+  }
+}
+
+function handleSelectJob(jobId) {
+  state.operations.selectedJobId = jobId;
+  renderOperations();
+}
+
+async function handleRetryJob(job) {
+  if (!job) {
+    return;
+  }
+  await handleJobSubmit({ source_path: job.source, output_dir: job.output });
+}
+
+function handleRemoveJob(jobId) {
+  state.operations.jobs = state.operations.jobs.filter((job) => job.id !== jobId);
+  state.operations.selectedJobId = state.operations.jobs[0]?.id ?? null;
+  saveJobs();
+  renderOperations();
+}
+
+function handleClearJobs() {
+  state.operations.jobs = [];
+  state.operations.selectedJobId = null;
+  saveJobs();
+  renderOperations();
+}
+
+
+async function handleVerifyAudit(jobId) {
+  if (!jobId) {
+    return;
+  }
+
+  try {
+    const result = await verifyAuditForJob(jobId);
+    state.operations.lastAuditVerification = {
+      jobId,
+      verified: Boolean(result?.verified),
+      checkedAt: Date.now(),
+      error: null
+    };
+    updateOperationsStatus([`Audit verification succeeded for ${jobId}`]);
+  } catch (error) {
+    state.operations.lastAuditVerification = {
+      jobId,
+      verified: false,
+      checkedAt: Date.now(),
+      error: error?.message ?? "Audit verification failed."
+    };
+    updateOperationsStatus([`Audit verification failed for ${jobId}`]);
+  }
+
+  renderOperations();
+}
+
+function handleReconnect() {
+  if (state.operations.streamStatus === "Connecting") {
+    return;
+  }
+  startOperationsStream();
+  renderOperations();
+}
+
+loadSavedJobs();
+startOperationsStream();
 navigate();

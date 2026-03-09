@@ -13,7 +13,7 @@ use tracing::{debug, info, warn};
 mod compression;
 mod formats;
 
-use compression::{decompress_lz4, decompress_lzma};
+use compression::decompress_unity_data;
 use formats::{AssetBundle, SerializedFile, UnityVersion};
 
 /// Unity plugin factory
@@ -251,6 +251,45 @@ impl UnityArchive {
                     last_modified: None,
                     checksum: None,
                 });
+
+                if object.class_id == 28 {
+                    entries.push(EntryMetadata {
+                        id: EntryId::new(format!("object_meta_{}", object.path_id)),
+                        name: format!("Texture2D_{}.json", object.path_id),
+                        path: PathBuf::from(format!("{}.texture.json", object.path_id)),
+                        size_compressed: None,
+                        size_uncompressed: 0,
+                        file_type: Some("unity_meta".to_string()),
+                        last_modified: None,
+                        checksum: None,
+                    });
+                }
+
+                if object.class_id == 43 {
+                    entries.push(EntryMetadata {
+                        id: EntryId::new(format!("object_meta_{}", object.path_id)),
+                        name: format!("Mesh_{}.json", object.path_id),
+                        path: PathBuf::from(format!("{}.mesh.json", object.path_id)),
+                        size_compressed: None,
+                        size_uncompressed: 0,
+                        file_type: Some("unity_meta".to_string()),
+                        last_modified: None,
+                        checksum: None,
+                    });
+                }
+
+                if object.class_id == 21 {
+                    entries.push(EntryMetadata {
+                        id: EntryId::new(format!("object_meta_{}", object.path_id)),
+                        name: format!("Material_{}.json", object.path_id),
+                        path: PathBuf::from(format!("{}.material.json", object.path_id)),
+                        size_compressed: None,
+                        size_uncompressed: 0,
+                        file_type: Some("unity_meta".to_string()),
+                        last_modified: None,
+                        checksum: None,
+                    });
+                }
             }
         }
 
@@ -309,7 +348,29 @@ impl ArchiveHandler for UnityArchive {
                         .context("Invalid path ID")?;
 
                 if let Some(object) = serialized.objects.iter().find(|o| o.path_id == path_id) {
-                    return self.extract_serialized_object(object, serialized);
+                    return self.extract_serialized_object(object);
+                }
+            }
+
+            if id.0.starts_with("object_meta_") {
+                let path_id: u64 =
+                    id.0.strip_prefix("object_meta_")
+                        .unwrap()
+                        .parse()
+                        .context("Invalid path ID")?;
+
+                if let Some(object) = serialized.objects.iter().find(|o| o.path_id == path_id) {
+                    let metadata = match object.class_id {
+                        28 => self.extract_texture_metadata(object)?,
+                        43 => self.extract_mesh_metadata(object)?,
+                        21 => self.extract_material_metadata(object)?,
+                        _ => serde_json::json!({
+                            "class_id": object.class_id,
+                            "path_id": object.path_id,
+                            "byte_size": object.size,
+                        }),
+                    };
+                    return Ok(serde_json::to_vec_pretty(&metadata)?);
                 }
             }
         }
@@ -336,22 +397,15 @@ impl UnityArchive {
 
         let compressed_data = &file_data[start..end];
 
-        match block.compression_type {
-            0 => Ok(compressed_data.to_vec()), // No compression
-            1 => bail!("LZMA compression not yet implemented"),
-            2 => decompress_lz4(compressed_data, block.size as usize), // LZ4
-            3 => bail!("LZ4HC compression not yet implemented"),
-            4 => bail!("LZHAM compression not yet implemented"),
-            _ => bail!("Unknown compression type: {}", block.compression_type),
-        }
+        decompress_unity_data(
+            compressed_data,
+            block.compression_type,
+            block.size as usize,
+        )
     }
 
     /// Extract data from a serialized object
-    fn extract_serialized_object(
-        &self,
-        object: &formats::ObjectInfo,
-        _serialized: &SerializedFile,
-    ) -> Result<Vec<u8>> {
+    fn extract_serialized_object(&self, object: &formats::ObjectInfo) -> Result<Vec<u8>> {
         let file_data = std::fs::read(&self.file_path)?;
 
         let start = object.offset as usize;
@@ -363,6 +417,67 @@ impl UnityArchive {
 
         Ok(file_data[start..end].to_vec())
     }
+
+    fn extract_texture_metadata(&self, object: &formats::ObjectInfo) -> Result<serde_json::Value> {
+        let data = self.extract_serialized_object(object)?;
+        let mut cursor = Cursor::new(data.as_slice());
+
+        let name = read_aligned_string(&mut cursor).unwrap_or_else(|_| "Unknown".to_string());
+        let width = cursor.read_u32::<LittleEndian>().ok();
+        let height = cursor.read_u32::<LittleEndian>().ok();
+
+        Ok(serde_json::json!({
+            "class_id": object.class_id,
+            "path_id": object.path_id,
+            "name": name,
+            "width": width,
+            "height": height,
+            "byte_size": object.size,
+        }))
+    }
+
+    fn extract_mesh_metadata(&self, object: &formats::ObjectInfo) -> Result<serde_json::Value> {
+        let data = self.extract_serialized_object(object)?;
+        let mut cursor = Cursor::new(data.as_slice());
+
+        let name = read_aligned_string(&mut cursor).unwrap_or_else(|_| "Unknown".to_string());
+        let vertex_count = cursor.read_u32::<LittleEndian>().ok();
+        let index_count = cursor.read_u32::<LittleEndian>().ok();
+
+        Ok(serde_json::json!({
+            "class_id": object.class_id,
+            "path_id": object.path_id,
+            "name": name,
+            "vertex_count": vertex_count,
+            "index_count": index_count,
+            "byte_size": object.size,
+        }))
+    }
+
+    fn extract_material_metadata(&self, object: &formats::ObjectInfo) -> Result<serde_json::Value> {
+        let data = self.extract_serialized_object(object)?;
+        let mut cursor = Cursor::new(data.as_slice());
+
+        let name = read_aligned_string(&mut cursor).unwrap_or_else(|_| "Unknown".to_string());
+        let shader_name = read_aligned_string(&mut cursor).ok();
+
+        Ok(serde_json::json!({
+            "class_id": object.class_id,
+            "path_id": object.path_id,
+            "name": name,
+            "shader": shader_name,
+            "byte_size": object.size,
+        }))
+    }
+}
+
+fn read_aligned_string(cursor: &mut Cursor<&[u8]>) -> Result<String> {
+    let length = cursor.read_u32::<LittleEndian>()? as usize;
+    let mut bytes = vec![0u8; length];
+    cursor.read_exact(&mut bytes)?;
+    let padding = (4 - (length % 4)) % 4;
+    cursor.seek(SeekFrom::Current(padding as i64))?;
+    Ok(String::from_utf8(bytes).context("Invalid UTF-8 in string")?)
 }
 
 #[cfg(test)]

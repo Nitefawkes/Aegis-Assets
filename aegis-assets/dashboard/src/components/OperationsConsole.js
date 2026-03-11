@@ -9,7 +9,8 @@ export function OperationsConsole({
   onRemoveJob,
   onClearJobs,
   onReconnect,
-  onVerifyAudit
+  onVerifyAudit,
+  onVerifyOwnership
 }) {
   const selectedJob = data.jobs.find((job) => job.id === data.selectedJobId) ?? null;
   const statusItems = data.statusMessages.map((message) =>
@@ -216,32 +217,56 @@ export function OperationsConsole({
             className: "button button--ghost",
             text: "Refresh",
             attributes: { type: "button" }
+          }),
+          createElement("button", {
+            className: "button button--ghost",
+            text: "Verify ownership",
+            attributes: { type: "button" }
           })
         ]
       })
     ]
   });
 
-  const refreshButton = jobForm.querySelector("button.button--ghost");
+  const [refreshButton, verifyOwnershipButton] = jobForm.querySelectorAll("button.button--ghost");
   refreshButton?.addEventListener("click", () => onRefresh?.());
 
-  jobForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
+  const buildOwnershipPayload = () => {
     const formData = new FormData(jobForm);
     const ownershipPlatform = String(formData.get("ownership_platform") || "").trim();
     const ownershipAppId = String(formData.get("ownership_app_id") || "").trim();
     const ownershipAccountId = String(formData.get("ownership_account_id") || "").trim();
+
+    if (!ownershipPlatform || !ownershipAppId || !ownershipAccountId) {
+      return null;
+    }
+
+    return {
+      platform: ownershipPlatform,
+      app_id: ownershipAppId,
+      account_id: ownershipAccountId
+    };
+  };
+
+  verifyOwnershipButton?.addEventListener("click", async () => {
+    const ownership = buildOwnershipPayload();
+    if (!ownership) {
+      return;
+    }
+    await onVerifyOwnership?.(ownership);
+  });
+
+  jobForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const formData = new FormData(jobForm);
+    const ownership = buildOwnershipPayload();
     const payload = {
       source_path: formData.get("source_path"),
       output_dir: formData.get("output_dir")
     };
 
-    if (ownershipPlatform && ownershipAppId && ownershipAccountId) {
-      payload.ownership = {
-        platform: ownershipPlatform,
-        app_id: ownershipAppId,
-        account_id: ownershipAccountId
-      };
+    if (ownership) {
+      payload.ownership = ownership;
     }
     await onSubmitJob?.(payload);
     jobForm.reset();
@@ -353,6 +378,11 @@ export function OperationsConsole({
             text: data.lastAuditVerification
               ? `Last audit check: ${data.lastAuditVerification.jobId} • ${data.lastAuditVerification.verified ? "Verified" : data.lastAuditVerification.error ?? "Failed"}`
               : "Last audit check: None"
+          }),
+          createElement("li", {
+            text: data.lastOwnershipVerification
+              ? `Last ownership check: ${data.lastOwnershipVerification.platform}:${data.lastOwnershipVerification.app_id} • ${data.lastOwnershipVerification.verified ? "Verified" : data.lastOwnershipVerification.error ?? "Failed"}`
+              : "Last ownership check: None"
           })
         ]
       })

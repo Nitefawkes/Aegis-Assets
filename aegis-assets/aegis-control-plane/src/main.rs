@@ -122,6 +122,14 @@ struct AuditVerifyResponse {
     verified: bool,
 }
 
+#[derive(Debug, Serialize)]
+struct OwnershipVerifyResponse {
+    verified: bool,
+    platform: String,
+    app_id: String,
+    account_id: String,
+}
+
 #[tokio::main]
 async fn main() {
     let env_filter = EnvFilter::try_from_default_env()
@@ -164,6 +172,7 @@ async fn main() {
         .route("/events/stream", get(stream_events))
         .route("/jobs/extract", post(start_extract_job))
         .route("/audit/verify/{job_id}", get(verify_job_audit_log))
+        .route("/ownership/verify", post(verify_ownership))
         .with_state(state.clone())
         .layer(ServiceBuilder::new().layer(middleware::from_fn_with_state(
             state.clone(),
@@ -302,6 +311,19 @@ async fn auth_rate_limit_middleware(
     }
 
     Ok(next.run(req).await)
+}
+
+async fn verify_ownership(
+    Json(request): Json<OwnershipVerificationRequest>,
+) -> Result<Json<OwnershipVerifyResponse>, (StatusCode, String)> {
+    verify_ownership_allowlist(&request).map_err(|error| (StatusCode::FORBIDDEN, error))?;
+
+    Ok(Json(OwnershipVerifyResponse {
+        verified: true,
+        platform: request.platform,
+        app_id: request.app_id,
+        account_id: request.account_id,
+    }))
 }
 
 async fn verify_job_audit_log(
@@ -499,6 +521,21 @@ mod tests {
         let result =
             verify_ownership_requirement(Some(&request)).expect("verification should pass");
         assert!(result);
+    }
+
+    #[test]
+    fn ownership_verification_rejects_missing_allowlist() {
+        std::env::set_var("AEGIS_REQUIRE_OWNERSHIP_VERIFICATION", "true");
+        std::env::set_var("AEGIS_OWNERSHIP_ALLOWLIST", "does-not-exist.json");
+
+        let request = OwnershipVerificationRequest {
+            platform: "steam".to_string(),
+            app_id: "570".to_string(),
+            account_id: "acct-1".to_string(),
+        };
+
+        let result = verify_ownership_requirement(Some(&request));
+        assert!(result.is_err());
     }
 
     #[test]

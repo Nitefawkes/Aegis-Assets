@@ -8,7 +8,8 @@ import {
   getRiskHeatmap,
   startExtractJob,
   streamExtractionEvents,
-  verifyAuditForJob
+  verifyAuditForJob,
+  verifyOwnership
 } from "./controlPlaneApi.js";
 import { createElement } from "./utils/dom.js";
 import { RiskHeatmap } from "./components/RiskHeatmap.js";
@@ -43,7 +44,8 @@ const state = {
     lastStreamError: null,
     lastSubmissionError: null,
     streamConnectedAt: null,
-    lastAuditVerification: null
+    lastAuditVerification: null,
+    lastOwnershipVerification: null
   },
   status: null
 };
@@ -360,7 +362,8 @@ const routes = {
         onRemoveJob: handleRemoveJob,
         onClearJobs: handleClearJobs,
         onReconnect: handleReconnect,
-        onVerifyAudit: handleVerifyAudit
+        onVerifyAudit: handleVerifyAudit,
+        onVerifyOwnership: handleVerifyOwnership
       })
   },
   risk: {
@@ -507,6 +510,29 @@ function handleClearJobs() {
   renderOperations();
 }
 
+
+
+async function handleVerifyOwnership(payload) {
+  try {
+    const result = await verifyOwnership(payload);
+    state.operations.lastOwnershipVerification = {
+      ...payload,
+      verified: Boolean(result?.verified),
+      checkedAt: Date.now(),
+      error: null
+    };
+    updateOperationsStatus([`Ownership verified for ${payload.platform}:${payload.app_id}`]);
+  } catch (error) {
+    state.operations.lastOwnershipVerification = {
+      ...payload,
+      verified: false,
+      checkedAt: Date.now(),
+      error: error?.message ?? "Ownership verification failed."
+    };
+    updateOperationsStatus([`Ownership verification failed for ${payload.platform}:${payload.app_id}`]);
+  }
+  renderOperations();
+}
 
 async function handleVerifyAudit(jobId) {
   if (!jobId) {

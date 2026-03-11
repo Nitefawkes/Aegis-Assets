@@ -16,6 +16,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::{
     convert::Infallible,
+    fs,
     net::SocketAddr,
     path::{Component, Path as StdPath, PathBuf},
     sync::Arc,
@@ -99,11 +100,20 @@ impl ExtractionEventEmitter for ChannelEventEmitter {
 struct ExtractRequest {
     source_path: String,
     output_dir: String,
+    ownership: Option<OwnershipVerificationRequest>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OwnershipVerificationRequest {
+    platform: String,
+    app_id: String,
+    account_id: String,
 }
 
 #[derive(Debug, Serialize)]
 struct ExtractResponse {
     job_id: Uuid,
+    ownership_verified: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -221,6 +231,9 @@ async fn start_extract_job(
     let job_id = Uuid::new_v4();
     let source_path = PathBuf::from(request.source_path);
     let output_dir = PathBuf::from(request.output_dir);
+
+    let ownership_verified = verify_ownership_requirement(request.ownership.as_ref())
+        .map_err(|error| (StatusCode::FORBIDDEN, error))?;
     let event_sender = state.event_tx.clone();
     let plugin_registry = state.plugin_registry.clone();
     let compliance_registry = state.compliance_registry.clone();
@@ -260,7 +273,10 @@ async fn start_extract_job(
         }
     });
 
-    Ok(Json(ExtractResponse { job_id }))
+    Ok(Json(ExtractResponse {
+        job_id,
+        ownership_verified,
+    }))
 }
 
 async fn auth_rate_limit_middleware(
@@ -322,6 +338,61 @@ fn verify_job_audit_files(
         job_id,
         verified: true,
     })
+}
+
+fn verify_ownership_requirement(
+    ownership: Option<&OwnershipVerificationRequest>,
+) -> Result<bool, String> {
+    let require_verification = std::env::var("AEGIS_REQUIRE_OWNERSHIP_VERIFICATION")
+        .map(|value| value == "1" || value.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+
+    if !require_verification {
+        return Ok(false);
+    }
+
+    let ownership = ownership
+        .ok_or_else(|| "Ownership verification is required for extraction requests.".to_string())?;
+
+    verify_ownership_allowlist(ownership)?;
+    Ok(true)
+}
+
+fn verify_ownership_allowlist(ownership: &OwnershipVerificationRequest) -> Result<(), String> {
+    let allowlist_path = std::env::var("AEGIS_OWNERSHIP_ALLOWLIST")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("compliance-profiles/ownership-allowlist.json"));
+
+    let raw = fs::read_to_string(&allowlist_path).map_err(|_| {
+        format!(
+            "Ownership allowlist not found at {}",
+            allowlist_path.display()
+        )
+    })?;
+
+    let allowlist: std::collections::HashMap<String, Vec<String>> = serde_json::from_str(&raw)
+        .map_err(|error| {
+            format!(
+                "Ownership allowlist at {} is invalid JSON: {}",
+                allowlist_path.display(),
+                error
+            )
+        })?;
+
+    let expected = format!("{}:{}", ownership.platform.to_lowercase(), ownership.app_id);
+    let owned = allowlist
+        .get(&ownership.account_id)
+        .map(|apps| apps.iter().any(|entry| entry == &expected))
+        .unwrap_or(false);
+
+    if owned {
+        Ok(())
+    } else {
+        Err(format!(
+            "Ownership verification failed for account '{}' and title '{}'",
+            ownership.account_id, expected
+        ))
+    }
 }
 
 fn validate_path(path: &StdPath) -> Result<(), String> {
@@ -401,5 +472,51 @@ mod tests {
 
         let result = verify_job_audit_files(dir.path(), job_id);
         assert!(matches!(result, Err((StatusCode::UNPROCESSABLE_ENTITY, _))));
+    }
+
+    #[test]
+    fn ownership_verification_skips_when_not_required() {
+        std::env::remove_var("AEGIS_REQUIRE_OWNERSHIP_VERIFICATION");
+        let result = verify_ownership_requirement(None).expect("should not fail");
+        assert!(!result);
+    }
+
+    #[test]
+    fn ownership_verification_accepts_allowlisted_title() {
+        let dir = tempdir().expect("create temp dir");
+        let path = dir.path().join("allowlist.json");
+        fs::write(&path, r#"{"acct-1":["steam:570"]}"#).expect("write allowlist");
+
+        std::env::set_var("AEGIS_REQUIRE_OWNERSHIP_VERIFICATION", "true");
+        std::env::set_var("AEGIS_OWNERSHIP_ALLOWLIST", &path);
+
+        let request = OwnershipVerificationRequest {
+            platform: "steam".to_string(),
+            app_id: "570".to_string(),
+            account_id: "acct-1".to_string(),
+        };
+
+        let result =
+            verify_ownership_requirement(Some(&request)).expect("verification should pass");
+        assert!(result);
+    }
+
+    #[test]
+    fn ownership_verification_rejects_missing_title() {
+        let dir = tempdir().expect("create temp dir");
+        let path = dir.path().join("allowlist.json");
+        fs::write(&path, r#"{"acct-1":["steam:730"]}"#).expect("write allowlist");
+
+        std::env::set_var("AEGIS_REQUIRE_OWNERSHIP_VERIFICATION", "true");
+        std::env::set_var("AEGIS_OWNERSHIP_ALLOWLIST", &path);
+
+        let request = OwnershipVerificationRequest {
+            platform: "steam".to_string(),
+            app_id: "570".to_string(),
+            account_id: "acct-1".to_string(),
+        };
+
+        let result = verify_ownership_requirement(Some(&request));
+        assert!(result.is_err());
     }
 }

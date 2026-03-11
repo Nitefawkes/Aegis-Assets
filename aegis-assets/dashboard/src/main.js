@@ -468,6 +468,9 @@ async function handleJobSubmit(payload) {
     saveJobs();
     updateOperationsStatus([
       `Job submitted: ${state.operations.lastJobId ?? "unknown"}`,
+      response?.ownership_verified
+        ? "Ownership verification passed."
+        : "Ownership verification not required.",
       ...state.operations.statusMessages
     ]);
     renderOperations();

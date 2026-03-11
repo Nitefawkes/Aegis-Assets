@@ -166,6 +166,45 @@ export function OperationsConsole({
         ]
       }),
       createElement("div", {
+        className: "form__field",
+        children: [
+          createElement("label", { text: "Ownership platform (optional)" }),
+          createElement("input", {
+            attributes: {
+              name: "ownership_platform",
+              type: "text",
+              placeholder: "steam or epic"
+            }
+          })
+        ]
+      }),
+      createElement("div", {
+        className: "form__field",
+        children: [
+          createElement("label", { text: "Ownership app id (optional)" }),
+          createElement("input", {
+            attributes: {
+              name: "ownership_app_id",
+              type: "text",
+              placeholder: "570"
+            }
+          })
+        ]
+      }),
+      createElement("div", {
+        className: "form__field",
+        children: [
+          createElement("label", { text: "Ownership account id (optional)" }),
+          createElement("input", {
+            attributes: {
+              name: "ownership_account_id",
+              type: "text",
+              placeholder: "acct-1"
+            }
+          })
+        ]
+      }),
+      createElement("div", {
         className: "form__actions",
         children: [
           createElement("button", {
@@ -189,10 +228,21 @@ export function OperationsConsole({
   jobForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const formData = new FormData(jobForm);
+    const ownershipPlatform = String(formData.get("ownership_platform") || "").trim();
+    const ownershipAppId = String(formData.get("ownership_app_id") || "").trim();
+    const ownershipAccountId = String(formData.get("ownership_account_id") || "").trim();
     const payload = {
       source_path: formData.get("source_path"),
       output_dir: formData.get("output_dir")
     };
+
+    if (ownershipPlatform && ownershipAppId && ownershipAccountId) {
+      payload.ownership = {
+        platform: ownershipPlatform,
+        app_id: ownershipAppId,
+        account_id: ownershipAccountId
+      };
+    }
     await onSubmitJob?.(payload);
     jobForm.reset();
   });

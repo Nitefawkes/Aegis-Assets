@@ -7,7 +7,9 @@ import {
   getPolicyProfiles,
   getRiskHeatmap,
   startExtractJob,
-  streamExtractionEvents
+  streamExtractionEvents,
+  verifyAuditForJob,
+  verifyOwnership
 } from "./controlPlaneApi.js";
 import { createElement } from "./utils/dom.js";
 import { RiskHeatmap } from "./components/RiskHeatmap.js";
@@ -37,10 +39,18 @@ const state = {
     compliance: null,
     lastJobId: null,
     jobs: [],
-    streamStatus: "Connecting"
+    streamStatus: "Connecting",
+    selectedJobId: null,
+    lastStreamError: null,
+    lastSubmissionError: null,
+    streamConnectedAt: null,
+    lastAuditVerification: null,
+    lastOwnershipVerification: null
   },
   status: null
 };
+
+const OPERATIONS_JOBS_KEY = "aegis.operations.jobs";
 
 const fallbackData = {
   risk: {
@@ -167,8 +177,52 @@ function updateOperationsStatus(messages) {
   state.operations.statusMessages = messages;
 }
 
+function loadSavedJobs() {
+  try {
+    const saved = window.localStorage.getItem(OPERATIONS_JOBS_KEY);
+    if (!saved) {
+      return;
+    }
+    const jobs = JSON.parse(saved);
+    if (Array.isArray(jobs)) {
+      state.operations.jobs = jobs;
+      state.operations.selectedJobId = jobs[0]?.id ?? null;
+    }
+  } catch (error) {
+    console.error("Failed to load saved jobs", error);
+  }
+}
+
+function saveJobs() {
+  try {
+    window.localStorage.setItem(OPERATIONS_JOBS_KEY, JSON.stringify(state.operations.jobs));
+  } catch (error) {
+    console.error("Failed to persist jobs", error);
+  }
+}
+
+function selectedJob() {
+  return state.operations.jobs.find((job) => job.id === state.operations.selectedJobId) ?? null;
+}
+
+function selectedJobEvents() {
+  const job = selectedJob();
+  if (!job) {
+    return state.operations.events;
+  }
+  return state.operations.events.filter((event) => event.jobId === job.id);
+}
+
 function updateStreamStatus(status) {
   state.operations.streamStatus = status;
+}
+
+function updateStreamError(error) {
+  state.operations.lastStreamError = error;
+}
+
+function updateSubmissionError(error) {
+  state.operations.lastSubmissionError = error;
 }
 
 function recordComplianceDecision(decision) {
@@ -181,13 +235,16 @@ function recordComplianceDecision(decision) {
 }
 
 function formatEvent(event) {
+  const jobId = event.job_id;
   const kind = event.kind;
   if (kind?.JobStateChange) {
+    syncJobStatus(jobId, kind.JobStateChange.state, kind.JobStateChange.message ?? "");
     return {
       title: `Job ${kind.JobStateChange.state}`,
       detail: kind.JobStateChange.message ?? "",
       kind: "Job state",
-      timestamp: event.occurred_at
+      timestamp: event.occurred_at,
+      jobId
     };
   }
   if (kind?.ComplianceDecision) {
@@ -196,7 +253,8 @@ function formatEvent(event) {
       title: "Compliance decision",
       detail: (kind.ComplianceDecision.warnings ?? []).join(" ") || "No warnings.",
       kind: "Compliance",
-      timestamp: event.occurred_at
+      timestamp: event.occurred_at,
+      jobId
     };
   }
   if (kind?.AssetIndexingProgress) {
@@ -204,15 +262,35 @@ function formatEvent(event) {
       title: "Indexing assets",
       detail: `${kind.AssetIndexingProgress.indexed} / ${kind.AssetIndexingProgress.total} indexed`,
       kind: "Indexing",
-      timestamp: event.occurred_at
+      timestamp: event.occurred_at,
+      jobId
     };
   }
   return {
     title: "Extraction event",
     detail: JSON.stringify(event),
     kind: "Event",
-    timestamp: event.occurred_at
+    timestamp: event.occurred_at,
+    jobId
   };
+}
+
+function syncJobStatus(jobId, status, message) {
+  if (!jobId) {
+    return;
+  }
+  const index = state.operations.jobs.findIndex((job) => job.id === jobId);
+  if (index === -1) {
+    return;
+  }
+  const current = state.operations.jobs[index];
+  state.operations.jobs[index] = {
+    ...current,
+    status,
+    lastMessage: message,
+    updatedAt: Date.now()
+  };
+  saveJobs();
 }
 
 async function startOperationsStream() {
@@ -229,6 +307,8 @@ async function startOperationsStream() {
         const formatted = formatEvent(event);
         state.operations.events = [formatted, ...state.operations.events].slice(0, 25);
         updateStreamStatus("Connected");
+        updateStreamError(null);
+        state.operations.streamConnectedAt = Date.now();
         if (window.location.hash.replace("#", "") === "operations") {
           renderOperations();
         }
@@ -236,10 +316,12 @@ async function startOperationsStream() {
       onError: (error) => {
         console.error(error);
         updateStreamStatus("Error");
+        updateStreamError(error?.message ?? "Unknown stream error");
       }
     });
   } catch (error) {
     updateStreamStatus("Disconnected");
+    updateStreamError(error?.message ?? "Event stream unavailable.");
     updateOperationsStatus([...statusMessages, "Event stream unavailable."]);
   }
 }
@@ -269,9 +351,19 @@ const routes = {
     description: "Submit extraction jobs and monitor live compliance events.",
     render: () =>
       OperationsConsole({
-        data: state.operations,
+        data: {
+          ...state.operations,
+          selectedEvents: selectedJobEvents()
+        },
         onSubmitJob: handleJobSubmit,
-        onRefresh: () => renderOperations()
+        onRefresh: () => renderOperations(),
+        onSelectJob: handleSelectJob,
+        onRetryJob: handleRetryJob,
+        onRemoveJob: handleRemoveJob,
+        onClearJobs: handleClearJobs,
+        onReconnect: handleReconnect,
+        onVerifyAudit: handleVerifyAudit,
+        onVerifyOwnership: handleVerifyOwnership
       })
   },
   risk: {
@@ -369,20 +461,114 @@ async function handleJobSubmit(payload) {
         source: payload.source_path,
         output: payload.output_dir,
         submittedAt: Date.now(),
-        status: "Submitted"
+        status: "Submitted",
+        lastMessage: "Job queued"
       },
       ...state.operations.jobs
     ].slice(0, 5);
+    state.operations.selectedJobId = state.operations.jobs[0]?.id ?? null;
+    updateSubmissionError(null);
+    saveJobs();
     updateOperationsStatus([
       `Job submitted: ${state.operations.lastJobId ?? "unknown"}`,
+      response?.ownership_verified
+        ? "Ownership verification passed."
+        : "Ownership verification not required.",
       ...state.operations.statusMessages
     ]);
     renderOperations();
   } catch (error) {
+    updateSubmissionError(error?.message ?? "Job submission failed.");
     updateOperationsStatus([`Job submission failed: ${error.message}`]);
     renderOperations();
   }
 }
 
+function handleSelectJob(jobId) {
+  state.operations.selectedJobId = jobId;
+  renderOperations();
+}
+
+async function handleRetryJob(job) {
+  if (!job) {
+    return;
+  }
+  await handleJobSubmit({ source_path: job.source, output_dir: job.output });
+}
+
+function handleRemoveJob(jobId) {
+  state.operations.jobs = state.operations.jobs.filter((job) => job.id !== jobId);
+  state.operations.selectedJobId = state.operations.jobs[0]?.id ?? null;
+  saveJobs();
+  renderOperations();
+}
+
+function handleClearJobs() {
+  state.operations.jobs = [];
+  state.operations.selectedJobId = null;
+  saveJobs();
+  renderOperations();
+}
+
+
+
+async function handleVerifyOwnership(payload) {
+  try {
+    const result = await verifyOwnership(payload);
+    state.operations.lastOwnershipVerification = {
+      ...payload,
+      verified: Boolean(result?.verified),
+      checkedAt: Date.now(),
+      error: null
+    };
+    updateOperationsStatus([`Ownership verified for ${payload.platform}:${payload.app_id}`]);
+  } catch (error) {
+    state.operations.lastOwnershipVerification = {
+      ...payload,
+      verified: false,
+      checkedAt: Date.now(),
+      error: error?.message ?? "Ownership verification failed."
+    };
+    updateOperationsStatus([`Ownership verification failed for ${payload.platform}:${payload.app_id}`]);
+  }
+  renderOperations();
+}
+
+async function handleVerifyAudit(jobId) {
+  if (!jobId) {
+    return;
+  }
+
+  try {
+    const result = await verifyAuditForJob(jobId);
+    state.operations.lastAuditVerification = {
+      jobId,
+      verified: Boolean(result?.verified),
+      checkedAt: Date.now(),
+      error: null
+    };
+    updateOperationsStatus([`Audit verification succeeded for ${jobId}`]);
+  } catch (error) {
+    state.operations.lastAuditVerification = {
+      jobId,
+      verified: false,
+      checkedAt: Date.now(),
+      error: error?.message ?? "Audit verification failed."
+    };
+    updateOperationsStatus([`Audit verification failed for ${jobId}`]);
+  }
+
+  renderOperations();
+}
+
+function handleReconnect() {
+  if (state.operations.streamStatus === "Connecting") {
+    return;
+  }
+  startOperationsStream();
+  renderOperations();
+}
+
+loadSavedJobs();
 startOperationsStream();
 navigate();

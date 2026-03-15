@@ -54,6 +54,18 @@ export async function getAuditEvents() {
   return fetchJson("/audit/events");
 }
 
+export async function verifyAuditForJob(jobId) {
+  return fetchJsonWithAuth(`/audit/verify/${jobId}`);
+}
+
+export async function verifyOwnership(payload) {
+  return fetchJsonWithAuth("/ownership/verify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+}
+
 export async function startExtractJob(payload) {
   return fetchJsonWithAuth("/jobs/extract", {
     method: "POST",

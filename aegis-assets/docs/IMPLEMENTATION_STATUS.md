@@ -14,7 +14,7 @@ This document reconciles the achievements claimed in the README with the current
 
 ### Patch recipe system
 * **Claim**: Deltas-only reconstruction of assets.
-* **Reality**: The recipe builder, serialization, and applier are largely implemented, including hashing, delta application, and several patch operations. Format conversion is still a stub that simply returns the input buffer, but the rest of the flow works.【F:aegis-assets/aegis-core/src/patch.rs†L1-L327】
+* **Reality**: The recipe builder, serialization, and applier are largely implemented, including hashing, delta application, and several patch operations. Format conversion is still a stub that simply returns the input buffer, but the rest of the flow works.
 
 ### Compliance framework
 * **Claim**: Risk assessment and reporting baked into every extraction.
@@ -36,3 +36,37 @@ This document reconciles the achievements claimed in the README with the current
 4. **Scope or defer advanced roadmap items.** Document realistic milestones for AI tooling and GUI/web preview since no code currently exists for these capabilities.
 
 These focus areas will bring the repository in line with the achievements advertised publicly.
+
+
+## Phase 1 implementation assessment (current)
+
+Based on the current extraction, control-plane, and dashboard behavior, Phase 1 appears **~75–80% complete**.
+
+### Completed in Phase 1
+
+- ✅ Plugin-backed extraction flow is implemented and wired through the control-plane.
+- ✅ Compliance profile loading and extraction-time enforcement are in place.
+- ✅ Enterprise audit logging (JSONL + hash chain emission) is present.
+- ✅ Operations console supports job submission, stream diagnostics, recent history, filtering, and operator troubleshooting actions.
+- ✅ Unity metadata visibility for Texture2D/Mesh/Material is implemented for discoverability.
+
+### Remaining to finish Phase 1
+
+1. **Close audit integrity loop (highest priority).**
+   - Integrate verification into a runnable operational path (CLI/API endpoint or startup/self-check), not just implementation-level hooks.
+2. **Complete Unity extraction depth beyond metadata.**
+   - Move from metadata-only object entries toward reliable extraction of usable texture/mesh/material outputs.
+3. **Compression/path hardening and test depth.**
+   - Increase coverage for mixed Unity compression variants and failure modes across real-world sample bundles.
+4. **Operations UX production hardening.**
+   - Add stronger empty/error/recovery states, stronger stream reconnection strategy, and environment-backed smoke tests with a live control-plane.
+
+### Suggested definition of done for Phase 1
+
+Phase 1 should be considered complete when:
+
+- extraction + compliance + audit are all exercised in automated integration tests,
+- Unity path reliably extracts at least one real asset class end-to-end (not only metadata), and
+- operations console workflows are validated against a running backend in CI smoke checks.
+
+At current trajectory, this is likely **1–2 focused sprints** away if scoped to the above three gates.

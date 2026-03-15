@@ -557,3 +557,43 @@ mod tests {
         assert!(result.is_err());
     }
 }
+
+async fn auth_rate_limit_middleware(
+    State(state): State<Arc<AppState>>,
+    req: Request<axum::body::Body>,
+    next: Next,
+) -> Result<axum::response::Response, StatusCode> {
+    if !state.rate_limiter.allow().await {
+        return Err(StatusCode::TOO_MANY_REQUESTS);
+    }
+
+    let required_key = state
+        .api_key
+        .as_deref()
+        .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
+    let provided_key = req
+        .headers()
+        .get("x-api-key")
+        .and_then(|value| value.to_str().ok());
+
+    if provided_key != Some(required_key) {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+
+    Ok(next.run(req).await)
+}
+
+fn validate_path(path: &Path) -> Result<(), String> {
+    if path.as_os_str().is_empty() {
+        return Err("Path must not be empty.".to_string());
+    }
+
+    if path
+        .components()
+        .any(|component| matches!(component, Component::ParentDir))
+    {
+        return Err("Path must not contain parent directory traversal.".to_string());
+    }
+
+    Ok(())
+}

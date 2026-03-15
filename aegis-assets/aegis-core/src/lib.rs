@@ -48,7 +48,7 @@
 pub mod archive;
 pub mod audit;
 pub mod compliance;
-pub mod events;
+pub mod control_plane;
 pub mod export;
 pub mod extract;
 pub mod patch;
@@ -59,9 +59,8 @@ pub use archive::{
     ArchiveHandler, ComplianceLevel, ComplianceProfile, ComplianceRegistry, EntryId, EntryMetadata,
     FormatSupport, PluginInfo, Provenance,
 };
-pub use events::{
-    ExtractionEvent, ExtractionEventEmitter, ExtractionEventKind, JobState, NoopEventEmitter,
-};
+pub use audit::{AuditEvent, AuditEventKind, AuditLogReader, AuditLogWriter, AUDIT_LOG_FILENAME};
+pub use control_plane::ControlPlane;
 pub use export::{ExportFormat, ExportOptions, Exporter};
 pub use extract::{ExtractionError, ExtractionResult, Extractor};
 pub use patch::{PatchRecipe, PatchRecipeBuilder};
@@ -267,6 +266,11 @@ impl AegisCore {
             &self.compliance_registry,
             self.config.clone(),
         )
+    }
+
+    /// Create a control-plane API handle
+    pub fn control_plane(&self) -> ControlPlane {
+        ControlPlane::new(&self.config)
     }
 
     /// Get system information
